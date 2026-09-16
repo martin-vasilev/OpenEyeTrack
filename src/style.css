@@ -15,3 +15,4 @@ video { transform: scaleX(-1); }
 button { padding: .75rem 1rem; border: 1px solid #cbd5e1; border-radius: 10px; background: white; cursor: pointer; font: inherit; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 pre { margin-top: 1rem; padding: 1rem; overflow-x: auto; border-radius: 10px; background: white; white-space: pre-wrap; }
+\n.toggle { display:inline-flex; align-items:center; gap:.45rem; padding:.6rem .2rem; font-size:.9rem; user-select:none; }\n.toggle input { width:1rem; height:1rem; }\n
