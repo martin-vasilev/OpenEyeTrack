@@ -1,6 +1,7 @@
 import { Camera, type CameraConfig } from "../camera/Camera";
 import { Recorder } from "../recording/Recorder";
 import type { EyeTrackingSample } from "../types/Sample";
+import type { EyeHeadFeatures } from "../features/EyeHeadFeatures";
 
 export class OpenEyeTrack {
   private readonly camera: Camera;
@@ -11,6 +12,7 @@ export class OpenEyeTrack {
   private currentTrial: string | null = null;
   private currentEvent: string | null = null;
   private recentFrameTimes: number[] = [];
+  private latestFeatures: EyeHeadFeatures | null = null;
 
   constructor(private readonly video: HTMLVideoElement) {
     this.camera = new Camera(video);
@@ -39,6 +41,7 @@ export class OpenEyeTrack {
   setTrial(trial: string | null): void { this.currentTrial = trial; }
   mark(event: string | null): void { this.currentEvent = event; }
   getSampleCount(): number { return this.recorder.count; }
+  setFeatures(features: EyeHeadFeatures | null): void { this.latestFeatures = features; }
 
   getObservedFps(): number | null {
     if (this.recentFrameTimes.length < 2) return null;
@@ -71,16 +74,16 @@ export class OpenEyeTrack {
       gazeX: null,
       gazeY: null,
       gazeConfidence: null,
-      pupilLeft: null,
-      pupilRight: null,
+      pupilLeft: this.latestFeatures?.leftIrisDiameter ?? null,
+      pupilRight: this.latestFeatures?.rightIrisDiameter ?? null,
       pupilLeftConfidence: null,
       pupilRightConfidence: null,
-      headX: null,
-      headY: null,
-      headZ: null,
-      headYaw: null,
-      headPitch: null,
-      headRoll: null,
+      headX: this.latestFeatures?.headX ?? null,
+      headY: this.latestFeatures?.headY ?? null,
+      headZ: this.latestFeatures?.headZ ?? null,
+      headYaw: this.latestFeatures?.headYaw ?? null,
+      headPitch: this.latestFeatures?.headPitch ?? null,
+      headRoll: this.latestFeatures?.headRoll ?? null,
       faceConfidence: null,
       eyeConfidence: null,
       trial: this.currentTrial,

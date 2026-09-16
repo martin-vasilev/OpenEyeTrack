@@ -2,6 +2,7 @@ import "./style.css";
 import { OpenEyeTrack } from "./core/OpenEyeTrack";
 import { FaceFeatureTracker } from "./features/FaceFeatureTracker";
 import { LandmarkOverlay } from "./features/LandmarkOverlay";
+import { extractEyeHeadFeatures, type EyeHeadFeatures } from "./features/EyeHeadFeatures";
 import type { EyeTrackingSample } from "./types/Sample";
 
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
@@ -45,6 +46,7 @@ let lastRecording: EyeTrackingSample[] = [];
 let statusTimer: number | null = null;
 let detectionAnimation: number | null = null;
 let detectedFaces = 0;
+let latestFeatures: EyeHeadFeatures | null = null;
 
 startButton.addEventListener("click", async () => {
   try {
@@ -110,8 +112,16 @@ function runLandmarks(): void {
   if (result) {
     detectedFaces = result.faceLandmarks.length;
     const face = result.faceLandmarks[0];
-    if (face) overlay.draw(face);
-    else overlay.clear();
+    if (face) {
+      overlay.draw(face);
+      const matrix = result.facialTransformationMatrixes?.[0]?.data;
+      latestFeatures = extractEyeHeadFeatures(face, matrix ? Array.from(matrix) : undefined);
+      tracker.setFeatures(latestFeatures);
+    } else {
+      latestFeatures = null;
+      tracker.setFeatures(null);
+      overlay.clear();
+    }
   }
   detectionAnimation = requestAnimationFrame(runLandmarks);
 }
