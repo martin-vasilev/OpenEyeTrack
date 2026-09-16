@@ -1,4 +1,5 @@
 import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
+import type { EyeHeadFeatures } from "./EyeHeadFeatures";
 
 export class LandmarkOverlay {
   private readonly context: CanvasRenderingContext2D;
@@ -20,17 +21,46 @@ export class LandmarkOverlay {
     this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
   }
 
-  draw(landmarks: NormalizedLandmark[]): void {
+  draw(landmarks: NormalizedLandmark[], features?: EyeHeadFeatures | null, showValues = false): void {
     this.clear();
     this.context.fillStyle = "rgba(0, 255, 170, 0.75)";
 
     for (const point of landmarks) {
-      // Video preview is mirrored in CSS, so mirror x for the overlay too.
       const x = (1 - point.x) * this.canvas.width;
       const y = point.y * this.canvas.height;
       this.context.beginPath();
       this.context.arc(x, y, 1.4, 0, Math.PI * 2);
       this.context.fill();
     }
+
+    if (showValues && features) this.drawDiagnostics(features);
+  }
+
+  private drawDiagnostics(f: EyeHeadFeatures): void {
+    const lines = [
+      `Iris L: ${f.leftIrisX.toFixed(3)}, ${f.leftIrisY.toFixed(3)}`,
+      `Iris R: ${f.rightIrisX.toFixed(3)}, ${f.rightIrisY.toFixed(3)}`,
+      `Iris size L/R: ${f.leftIrisDiameter.toFixed(4)} / ${f.rightIrisDiameter.toFixed(4)}`,
+      `Head XYZ: ${f.headX.toFixed(3)} / ${f.headY.toFixed(3)} / ${f.headZ.toFixed(3)}`,
+      `Yaw: ${f.headYaw?.toFixed(1) ?? "—"}°`,
+      `Pitch: ${f.headPitch?.toFixed(1) ?? "—"}°`,
+      `Roll: ${f.headRoll?.toFixed(1) ?? "—"}°`
+    ];
+
+    const x = 14;
+    const y = 14;
+    const lineHeight = 20;
+    const width = 265;
+    const height = lines.length * lineHeight + 18;
+
+    this.context.fillStyle = "rgba(0, 0, 0, 0.68)";
+    this.context.fillRect(x, y, width, height);
+    this.context.font = "14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    this.context.textBaseline = "top";
+    this.context.fillStyle = "white";
+
+    lines.forEach((line, index) => {
+      this.context.fillText(line, x + 10, y + 9 + index * lineHeight);
+    });
   }
 }
