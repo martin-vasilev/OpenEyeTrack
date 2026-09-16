@@ -1,31 +1,35 @@
 import "./style.css";
 import { OpenEyeTrack } from "./core/OpenEyeTrack";
+import { FaceFeatureTracker } from "./features/FaceFeatureTracker";
+import { LandmarkOverlay } from "./features/LandmarkOverlay";
 import type { EyeTrackingSample } from "./types/Sample";
 
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 <section class="shell">
   <header>
-    <p class="eyebrow">v0.1 prototype</p>
+    <p class="eyebrow">v0.2 landmark prototype</p>
     <h1>OpenEyeTrack</h1>
     <p>Browser-native webcam eye tracking for behavioural research.</p>
   </header>
 
   <div class="viewer">
     <video id="webcam" autoplay muted playsinline></video>
+    <canvas id="landmarks"></canvas>
     <div class="placeholder" id="placeholder">Camera preview</div>
   </div>
 
   <div class="controls">
-    <button id="start">Start camera</button>
+    <button id="start">Start camera + landmarks</button>
     <button id="record" disabled>Start recording</button>
     <button id="stop" disabled>Stop camera</button>
     <button id="export" disabled>Export CSV</button>
   </div>
 
-  <pre id="status">Ready. Webcam images are processed locally in this prototype.</pre>
+  <pre id="status">Ready. Face landmark inference runs locally in the browser.</pre>
 </section>`;
 
 const video = document.querySelector<HTMLVideoElement>("#webcam")!;
+const canvas = document.querySelector<HTMLCanvasElement>("#landmarks")!;
 const status = document.querySelector<HTMLPreElement>("#status")!;
 const startButton = document.querySelector<HTMLButtonElement>("#start")!;
 const stopButton = document.querySelector<HTMLButtonElement>("#stop")!;
@@ -34,22 +38,29 @@ const exportButton = document.querySelector<HTMLButtonElement>("#export")!;
 const placeholder = document.querySelector<HTMLDivElement>("#placeholder")!;
 
 const tracker = new OpenEyeTrack(video);
+const faceTracker = new FaceFeatureTracker();
+const overlay = new LandmarkOverlay(canvas);
 let recording = false;
 let lastRecording: EyeTrackingSample[] = [];
 let statusTimer: number | null = null;
+let detectionAnimation: number | null = null;
+let detectedFaces = 0;
 
 startButton.addEventListener("click", async () => {
   try {
+    status.textContent = "Loading face landmark model…";
+    await faceTracker.initialize();
     status.textContent = "Requesting camera permission…";
     const settings = await tracker.start();
     placeholder.hidden = true;
     startButton.disabled = true;
     stopButton.disabled = false;
     recordButton.disabled = false;
+    runLandmarks();
     updateStatus(settings);
     statusTimer = window.setInterval(() => updateStatus(settings), 500);
   } catch (error) {
-    status.textContent = `Camera error: ${error instanceof Error ? error.message : String(error)}`;
+    status.textContent = `Startup error: ${error instanceof Error ? error.message : String(error)}`;
   }
 });
 
@@ -76,7 +87,11 @@ stopButton.addEventListener("click", () => {
     recording = false;
   }
   if (statusTimer !== null) window.clearInterval(statusTimer);
+  if (detectionAnimation !== null) cancelAnimationFrame(detectionAnimation);
   statusTimer = null;
+  detectionAnimation = null;
+  faceTracker.close();
+  overlay.clear();
   tracker.stop();
   placeholder.hidden = false;
   startButton.disabled = false;
@@ -89,10 +104,22 @@ stopButton.addEventListener("click", () => {
 
 exportButton.addEventListener("click", () => downloadCsv(lastRecording));
 
+function runLandmarks(): void {
+  overlay.resizeTo(video);
+  const result = faceTracker.detect(video, performance.now());
+  if (result) {
+    detectedFaces = result.faceLandmarks.length;
+    const face = result.faceLandmarks[0];
+    if (face) overlay.draw(face);
+    else overlay.clear();
+  }
+  detectionAnimation = requestAnimationFrame(runLandmarks);
+}
+
 function updateStatus(settings: MediaTrackSettings): void {
   const fps = tracker.getObservedFps();
   status.textContent =
-    `Camera running\nResolution: ${settings.width ?? "?"} × ${settings.height ?? "?"}\nCamera FPS: ${settings.frameRate ?? "unknown"}\nObserved frame rate: ${fps?.toFixed(1) ?? "measuring…"} FPS\nSamples recorded: ${tracker.getSampleCount()}`;
+    `Camera running\nResolution: ${settings.width ?? "?"} × ${settings.height ?? "?"}\nCamera FPS: ${settings.frameRate ?? "unknown"}\nObserved frame rate: ${fps?.toFixed(1) ?? "measuring…"} FPS\nFaces detected: ${detectedFaces}\nSamples recorded: ${tracker.getSampleCount()}`;
 }
 
 function downloadCsv(samples: EyeTrackingSample[]): void {
