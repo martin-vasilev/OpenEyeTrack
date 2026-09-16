@@ -23,7 +23,8 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     <button id="start">Start camera + landmarks</button>
     <button id="record" disabled>Start recording</button>
     <button id="stop" disabled>Stop camera</button>
-    <button id="export" disabled>Export CSV</button>\n    <label class="toggle"><input id="show-values" type="checkbox" checked /> Show live values</label>
+    <button id="export" disabled>Export CSV</button>
+    <label class="toggle"><input id="show-values" type="checkbox" checked /> Show live values</label>
   </div>
 
   <pre id="status">Ready. Face landmark inference runs locally in the browser.</pre>
@@ -36,7 +37,8 @@ const startButton = document.querySelector<HTMLButtonElement>("#start")!;
 const stopButton = document.querySelector<HTMLButtonElement>("#stop")!;
 const recordButton = document.querySelector<HTMLButtonElement>("#record")!;
 const exportButton = document.querySelector<HTMLButtonElement>("#export")!;
-const placeholder = document.querySelector<HTMLDivElement>("#placeholder")!;\nconst showValues = document.querySelector<HTMLInputElement>("#show-values")!;
+const placeholder = document.querySelector<HTMLDivElement>("#placeholder")!;
+const showValues = document.querySelector<HTMLInputElement>("#show-values")!;
 
 const tracker = new OpenEyeTrack(video);
 const faceTracker = new FaceFeatureTracker();
@@ -115,7 +117,8 @@ function runLandmarks(): void {
     if (face) {
       const matrix = result.facialTransformationMatrixes?.[0]?.data;
       latestFeatures = extractEyeHeadFeatures(face, matrix ? Array.from(matrix) : undefined);
-      tracker.setFeatures(latestFeatures);\n      overlay.draw(face, latestFeatures, showValues.checked);
+      tracker.setFeatures(latestFeatures);
+      overlay.draw(face, latestFeatures, showValues.checked);
     } else {
       latestFeatures = null;
       tracker.setFeatures(null);
@@ -128,14 +131,20 @@ function runLandmarks(): void {
 function updateStatus(settings: MediaTrackSettings): void {
   const fps = tracker.getObservedFps();
   status.textContent =
-    `Camera running\nResolution: ${settings.width ?? "?"} × ${settings.height ?? "?"}\nCamera FPS: ${settings.frameRate ?? "unknown"}\nObserved frame rate: ${fps?.toFixed(1) ?? "measuring…"} FPS\nFaces detected: ${detectedFaces}\nSamples recorded: ${tracker.getSampleCount()}`;
+    `Camera running
+Resolution: ${settings.width ?? "?"} × ${settings.height ?? "?"}
+Camera FPS: ${settings.frameRate ?? "unknown"}
+Observed frame rate: ${fps?.toFixed(1) ?? "measuring…"} FPS
+Faces detected: ${detectedFaces}
+Samples recorded: ${tracker.getSampleCount()}`;
 }
 
 function downloadCsv(samples: EyeTrackingSample[]): void {
   if (samples.length === 0) return;
   const columns = Object.keys(samples[0]) as (keyof EyeTrackingSample)[];
   const rows = samples.map((sample) => columns.map((column) => csvCell(sample[column])).join(","));
-  const csv = [columns.join(","), ...rows].join("\n");
+  const csv = [columns.join(","), ...rows].join("
+");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -148,5 +157,6 @@ function downloadCsv(samples: EyeTrackingSample[]): void {
 function csvCell(value: unknown): string {
   if (value === null || value === undefined) return "";
   const text = String(value);
-  return /[,"\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+  return /[,"
+]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
