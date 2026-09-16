@@ -130,20 +130,25 @@ function runLandmarks(): void {
 
 function updateStatus(settings: MediaTrackSettings): void {
   const fps = tracker.getObservedFps();
-  status.textContent =
-    `Camera running
-Resolution: ${settings.width ?? "?"} × ${settings.height ?? "?"}
-Camera FPS: ${settings.frameRate ?? "unknown"}
-Observed frame rate: ${fps?.toFixed(1) ?? "measuring…"} FPS
-Faces detected: ${detectedFaces}
-Samples recorded: ${tracker.getSampleCount()}`;
+  status.textContent = [
+    "Camera running",
+    `Resolution: ${settings.width ?? "?"} × ${settings.height ?? "?"}`,
+    `Camera FPS: ${settings.frameRate ?? "unknown"}`,
+    `Observed frame rate: ${fps?.toFixed(1) ?? "measuring…"} FPS`,
+    `Faces detected: ${detectedFaces}`,
+    `Samples recorded: ${tracker.getSampleCount()}`
+  ].join("\n");
 }
 
 function downloadCsv(samples: EyeTrackingSample[]): void {
   if (samples.length === 0) return;
+
   const columns = Object.keys(samples[0]) as (keyof EyeTrackingSample)[];
-  const rows = samples.map((sample) => columns.map((column) => csvCell(sample[column])).join(","));
+  const rows = samples.map((sample) =>
+    columns.map((column) => csvCell(sample[column])).join(",")
+  );
   const csv = [columns.join(","), ...rows].join("\n");
+
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -156,6 +161,5 @@ function downloadCsv(samples: EyeTrackingSample[]): void {
 function csvCell(value: unknown): string {
   if (value === null || value === undefined) return "";
   const text = String(value);
-  return /[,"
-]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+  return /[,"\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
