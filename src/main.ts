@@ -23,7 +23,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     <button id="start">Start camera + landmarks</button>
     <button id="record" disabled>Start recording</button>
     <button id="stop" disabled>Stop camera</button>
-    <button id="export" disabled>Export CSV</button>
+    <button id="export" disabled>Export CSV</button>\n    <label class="toggle"><input id="show-values" type="checkbox" checked /> Show live values</label>
   </div>
 
   <pre id="status">Ready. Face landmark inference runs locally in the browser.</pre>
@@ -36,7 +36,7 @@ const startButton = document.querySelector<HTMLButtonElement>("#start")!;
 const stopButton = document.querySelector<HTMLButtonElement>("#stop")!;
 const recordButton = document.querySelector<HTMLButtonElement>("#record")!;
 const exportButton = document.querySelector<HTMLButtonElement>("#export")!;
-const placeholder = document.querySelector<HTMLDivElement>("#placeholder")!;
+const placeholder = document.querySelector<HTMLDivElement>("#placeholder")!;\nconst showValues = document.querySelector<HTMLInputElement>("#show-values")!;
 
 const tracker = new OpenEyeTrack(video);
 const faceTracker = new FaceFeatureTracker();
@@ -116,7 +116,7 @@ function runLandmarks(): void {
       overlay.draw(face);
       const matrix = result.facialTransformationMatrixes?.[0]?.data;
       latestFeatures = extractEyeHeadFeatures(face, matrix ? Array.from(matrix) : undefined);
-      tracker.setFeatures(latestFeatures);
+      tracker.setFeatures(latestFeatures);\n      overlay.draw(face, latestFeatures, showValues.checked);
     } else {
       latestFeatures = null;
       tracker.setFeatures(null);
