@@ -143,8 +143,7 @@ function downloadCsv(samples: EyeTrackingSample[]): void {
   if (samples.length === 0) return;
   const columns = Object.keys(samples[0]) as (keyof EyeTrackingSample)[];
   const rows = samples.map((sample) => columns.map((column) => csvCell(sample[column])).join(","));
-  const csv = [columns.join(","), ...rows].join("
-");
+  const csv = [columns.join(","), ...rows].join("\\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
