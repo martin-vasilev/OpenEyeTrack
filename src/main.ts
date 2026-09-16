@@ -113,7 +113,6 @@ function runLandmarks(): void {
     detectedFaces = result.faceLandmarks.length;
     const face = result.faceLandmarks[0];
     if (face) {
-      overlay.draw(face);
       const matrix = result.facialTransformationMatrixes?.[0]?.data;
       latestFeatures = extractEyeHeadFeatures(face, matrix ? Array.from(matrix) : undefined);
       tracker.setFeatures(latestFeatures);\n      overlay.draw(face, latestFeatures, showValues.checked);
