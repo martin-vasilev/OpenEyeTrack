@@ -4,6 +4,7 @@ import { FaceFeatureTracker } from "./features/FaceFeatureTracker";
 import { LandmarkOverlay } from "./features/LandmarkOverlay";
 import { extractEyeHeadFeatures, type EyeHeadFeatures } from "./features/EyeHeadFeatures";
 import type { EyeTrackingSample } from "./types/Sample";
+import { CalibrationController } from "./calibration/CalibrationController";
 
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 <section class="shell">
@@ -24,10 +25,14 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     <button id="record" disabled>Start recording</button>
     <button id="stop" disabled>Stop camera</button>
     <button id="export" disabled>Export CSV</button>
+    <button id="calibrate" disabled>9-point calibration</button>
+    <button id="validate" disabled>Validate</button>
     <label class="toggle"><input id="show-values" type="checkbox" checked /> Show live values</label>
   </div>
 
   <pre id="status">Ready. Face landmark inference runs locally in the browser.</pre>
+  <div id="calibration-target" class="calibration-target" hidden><span></span></div>
+  <div id="gaze-dot" class="gaze-dot" hidden></div>
 </section>`;
 
 const video = document.querySelector<HTMLVideoElement>("#webcam")!;
@@ -39,10 +44,15 @@ const recordButton = document.querySelector<HTMLButtonElement>("#record")!;
 const exportButton = document.querySelector<HTMLButtonElement>("#export")!;
 const placeholder = document.querySelector<HTMLDivElement>("#placeholder")!;
 const showValues = document.querySelector<HTMLInputElement>("#show-values")!;
+const calibrateButton = document.querySelector<HTMLButtonElement>("#calibrate")!;
+const validateButton = document.querySelector<HTMLButtonElement>("#validate")!;
+const calibrationTarget = document.querySelector<HTMLDivElement>("#calibration-target")!;
+const gazeDot = document.querySelector<HTMLDivElement>("#gaze-dot")!;
 
 const tracker = new OpenEyeTrack(video);
 const faceTracker = new FaceFeatureTracker();
 const overlay = new LandmarkOverlay(canvas);
+const calibration = new CalibrationController(calibrationTarget, { settleMs: 700, sampleMs: 900 });
 let recording = false;
 let lastRecording: EyeTrackingSample[] = [];
 let statusTimer: number | null = null;
@@ -60,6 +70,7 @@ startButton.addEventListener("click", async () => {
     startButton.disabled = true;
     stopButton.disabled = false;
     recordButton.disabled = false;
+    calibrateButton.disabled = false;
     runLandmarks();
     updateStatus(settings);
     statusTimer = window.setInterval(() => updateStatus(settings), 500);
@@ -101,12 +112,42 @@ stopButton.addEventListener("click", () => {
   startButton.disabled = false;
   stopButton.disabled = true;
   recordButton.disabled = true;
+  calibrateButton.disabled = true;
+  validateButton.disabled = true;
+  gazeDot.hidden = true;
   recordButton.textContent = "Start recording";
   exportButton.disabled = lastRecording.length === 0;
   status.textContent = "Camera stopped.";
 });
 
 exportButton.addEventListener("click", () => downloadCsv(lastRecording));
+
+calibrateButton.addEventListener("click", async () => {
+  setBusy(true);
+  status.textContent = "Calibration: keep your head comfortable and look at each target.";
+  try {
+    await calibration.calibrate(() => latestFeatures);
+    validateButton.disabled = false;
+    status.textContent = "Calibration complete. Live gaze prediction enabled.";
+  } catch (error) {
+    status.textContent = `Calibration error: ${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    setBusy(false);
+  }
+});
+
+validateButton.addEventListener("click", async () => {
+  setBusy(true);
+  status.textContent = "Validation running…";
+  try {
+    const result = await calibration.validate(() => latestFeatures);
+    status.textContent = `Validation complete: mean ${result.meanPx.toFixed(0)} px | median ${result.medianPx.toFixed(0)} px | RMSE ${result.rmsePx.toFixed(0)} px | ${result.points}/9 points`;
+  } catch (error) {
+    status.textContent = `Validation error: ${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    setBusy(false);
+  }
+});
 
 function runLandmarks(): void {
   overlay.resizeTo(video);
@@ -118,10 +159,21 @@ function runLandmarks(): void {
       const matrix = result.facialTransformationMatrixes?.[0]?.data;
       latestFeatures = extractEyeHeadFeatures(face, matrix ? Array.from(matrix) : undefined);
       tracker.setFeatures(latestFeatures);
+      const gaze = latestFeatures ? calibration.model.predict(latestFeatures) : null;
+      tracker.setGaze(gaze);
+      if (gaze) {
+        gazeDot.hidden = false;
+        gazeDot.style.left = `${Math.max(0, Math.min(innerWidth, gaze.x))}px`;
+        gazeDot.style.top = `${Math.max(0, Math.min(innerHeight, gaze.y))}px`;
+      } else {
+        gazeDot.hidden = true;
+      }
       overlay.draw(face, latestFeatures, showValues.checked);
     } else {
       latestFeatures = null;
       tracker.setFeatures(null);
+      tracker.setGaze(null);
+      gazeDot.hidden = true;
       overlay.clear();
     }
   }
@@ -162,4 +214,10 @@ function csvCell(value: unknown): string {
   if (value === null || value === undefined) return "";
   const text = String(value);
   return /[,"\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+function setBusy(busy: boolean): void {
+  calibrateButton.disabled = busy;
+  validateButton.disabled = busy || !calibration.model.calibrated;
+  recordButton.disabled = busy;
 }
