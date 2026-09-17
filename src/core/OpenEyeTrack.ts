@@ -2,6 +2,7 @@ import { Camera, type CameraConfig } from "../camera/Camera";
 import { Recorder } from "../recording/Recorder";
 import type { EyeTrackingSample } from "../types/Sample";
 import type { EyeHeadFeatures } from "../features/EyeHeadFeatures";
+import type { GazePrediction } from "../calibration/LinearGazeModel";
 
 export class OpenEyeTrack {
   private readonly camera: Camera;
@@ -13,6 +14,7 @@ export class OpenEyeTrack {
   private currentEvent: string | null = null;
   private recentFrameTimes: number[] = [];
   private latestFeatures: EyeHeadFeatures | null = null;
+  private latestGaze: GazePrediction | null = null;
 
   constructor(private readonly video: HTMLVideoElement) {
     this.camera = new Camera(video);
@@ -42,6 +44,7 @@ export class OpenEyeTrack {
   mark(event: string | null): void { this.currentEvent = event; }
   getSampleCount(): number { return this.recorder.count; }
   setFeatures(features: EyeHeadFeatures | null): void { this.latestFeatures = features; }
+  setGaze(gaze: GazePrediction | null): void { this.latestGaze = gaze; }
 
   getObservedFps(): number | null {
     if (this.recentFrameTimes.length < 2) return null;
@@ -71,9 +74,9 @@ export class OpenEyeTrack {
     this.recorder.add({
       timestamp,
       frameId: this.frameId++,
-      gazeX: null,
-      gazeY: null,
-      gazeConfidence: null,
+      gazeX: this.latestGaze?.x ?? null,
+      gazeY: this.latestGaze?.y ?? null,
+      gazeConfidence: this.latestGaze ? 1 : null,
       pupilLeft: this.latestFeatures?.leftIrisDiameter ?? null,
       pupilRight: this.latestFeatures?.rightIrisDiameter ?? null,
       pupilLeftConfidence: null,
