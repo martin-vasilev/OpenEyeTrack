@@ -20,21 +20,34 @@ class FeatureRidgeEstimator implements GazeEstimator {
   constructor(private quadratic:boolean,private lambda:number){this.name=quadratic?"polynomial":"linear";}
   fit(obs:CalibrationObservation[]){if(obs.length<5)throw new Error("Need at least 5 calibration observations.");const s=standardize(obs.map(o=>baseVector(o.features)));this.mean=s.mean;this.sd=s.sd;const x=s.rows.map(r=>this.expand(r));this.bx=ridgeFit(x,obs.map(o=>o.targetX),this.lambda);this.by=ridgeFit(x,obs.map(o=>o.targetY),this.lambda);}
   private expand(r:number[]){if(!this.quadratic)return[1,...r];const important=r.slice(0,7);return[1,...r,...important.map(v=>v*v),r[0]*r[1],r[0]*r[7],r[1]*r[8]];}
-  predict(f:EyeHeadFeatures){if(!this.bx||!this.by)return null;const x=this.expand(applyStandardize(baseVector(f),this.mean,this.sd));return{x:dot(this.bx,x),y:dot(this.by,x)};}
+  predict(f:EyeHeadFeatures){if(!this.bx||!this.by)return null;const x=this.expand(applyStandardize(baseVector(f),this.mean,this.sd));return{x:dot(this.bx,x),y:dot(this.by,x),confidence:1,support:1,extrapolating:false};}
   get calibrated(){return this.bx!==null;}
 }
+
+/** Linear global mapping plus local RBF correction. Weak RBF support fades to the linear baseline instead of (0,0). */
 class RbfKernelEstimator implements GazeEstimator {
-  readonly name="rbf";private train:number[][]=[];private ax:number[]|null=null;private ay:number[]|null=null;private mean:number[]=[];private sd:number[]=[];
-  constructor(private gamma:number,private lambda:number){}
+  readonly name="rbf";private train:number[][]=[];private ax:number[]|null=null;private ay:number[]|null=null;private mean:number[]=[];private sd:number[]=[];private baseline:FeatureRidgeEstimator;
+  constructor(private gamma:number,private lambda:number){this.baseline=new FeatureRidgeEstimator(false,lambda);}
   private kernel(a:number[],b:number[]){let d=0;for(let i=0;i<a.length;i++)d+=(a[i]-b[i])**2;return Math.exp(-this.gamma*d);}
-  fit(obs:CalibrationObservation[]){if(obs.length<5)throw new Error("Need at least 5 calibration observations.");const s=standardize(obs.map(o=>baseVector(o.features)));this.mean=s.mean;this.sd=s.sd;this.train=s.rows;const k=this.train.map((a,i)=>this.train.map((b,j)=>this.kernel(a,b)+(i===j?this.lambda:0)));this.ax=solve(k,obs.map(o=>o.targetX));this.ay=solve(k,obs.map(o=>o.targetY));}
-  predict(f:EyeHeadFeatures){if(!this.ax||!this.ay)return null;const z=applyStandardize(baseVector(f),this.mean,this.sd),k=this.train.map(t=>this.kernel(z,t));return{x:dot(this.ax,k),y:dot(this.ay,k)};}
-  get calibrated(){return this.ax!==null;}
+  fit(obs:CalibrationObservation[]){
+    if(obs.length<5)throw new Error("Need at least 5 calibration observations.");
+    this.baseline.fit(obs);const s=standardize(obs.map(o=>baseVector(o.features)));this.mean=s.mean;this.sd=s.sd;this.train=s.rows;
+    const residualX=obs.map(o=>o.targetX-(this.baseline.predict(o.features)?.x??o.targetX)),residualY=obs.map(o=>o.targetY-(this.baseline.predict(o.features)?.y??o.targetY));
+    const k=this.train.map((a,i)=>this.train.map((b,j)=>this.kernel(a,b)+(i===j?this.lambda:0)));this.ax=solve(k,residualX);this.ay=solve(k,residualY);
+  }
+  predict(f:EyeHeadFeatures){
+    if(!this.ax||!this.ay)return null;const base=this.baseline.predict(f);if(!base)return null;
+    const z=applyStandardize(baseVector(f),this.mean,this.sd),k=this.train.map(t=>this.kernel(z,t)),support=Math.max(...k,0);
+    // Support is the similarity to the nearest calibration observation. Smoothly suppress local correction outside calibrated feature space.
+    const correctionWeight=Math.max(0,Math.min(1,(support-.05)/.20));
+    return{x:base.x+correctionWeight*dot(this.ax,k),y:base.y+correctionWeight*dot(this.ay,k),confidence:support,support,extrapolating:support<.25};
+  }
+  get calibrated(){return this.ax!==null&&this.baseline.calibrated;}
 }
 class KnnEstimator implements GazeEstimator {
   readonly name="knn";private train:{x:number[];tx:number;ty:number}[]=[];private mean:number[]=[];private sd:number[]=[];constructor(private k:number){}
   fit(obs:CalibrationObservation[]){if(!obs.length)throw new Error("No calibration observations.");const s=standardize(obs.map(o=>baseVector(o.features)));this.mean=s.mean;this.sd=s.sd;this.train=s.rows.map((x,i)=>({x,tx:obs[i].targetX,ty:obs[i].targetY}));}
-  predict(f:EyeHeadFeatures){if(!this.train.length)return null;const z=applyStandardize(baseVector(f),this.mean,this.sd),near=this.train.map(t=>({t,d:Math.sqrt(t.x.reduce((s,v,i)=>s+(v-z[i])**2,0))})).sort((a,b)=>a.d-b.d).slice(0,Math.min(this.k,this.train.length));let sw=0,sx=0,sy=0;for(const n of near){const w=1/(n.d+1e-3);sw+=w;sx+=w*n.t.tx;sy+=w*n.t.ty;}return{x:sx/sw,y:sy/sw};}
+  predict(f:EyeHeadFeatures){if(!this.train.length)return null;const z=applyStandardize(baseVector(f),this.mean,this.sd),near=this.train.map(t=>({t,d:Math.sqrt(t.x.reduce((s,v,i)=>s+(v-z[i])**2,0))})).sort((a,b)=>a.d-b.d).slice(0,Math.min(this.k,this.train.length));let sw=0,sx=0,sy=0;for(const n of near){const w=1/(n.d+1e-3);sw+=w;sx+=w*n.t.tx;sy+=w*n.t.ty;}const nearest=near[0]?.d??Infinity,confidence=Math.exp(-nearest);return{x:sx/sw,y:sy/sw,confidence,support:confidence,extrapolating:confidence<.25};}
   get calibrated(){return this.train.length>0;}
 }
 export function createGazeEstimator(c:GazeModelConfig):GazeEstimator {
