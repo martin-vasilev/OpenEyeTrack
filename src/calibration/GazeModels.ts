@@ -1,9 +1,9 @@
 import type { EyeHeadFeatures } from "../features/EyeHeadFeatures";
 import type { CalibrationObservation, GazePrediction } from "./LinearGazeModel";
+import type { GazeEstimator } from "../gaze/GazeEstimator";
 
 export type GazeModelType = "linear" | "polynomial" | "rbf" | "knn";
 export interface GazeModelConfig { type: GazeModelType; ridge: number; rbfGamma: number; knnK: number; }
-export interface GazeModel { fit(observations: CalibrationObservation[]): void; predict(features: EyeHeadFeatures): GazePrediction | null; readonly calibrated: boolean; }
 
 function baseVector(f: EyeHeadFeatures): number[] {
   const relX=(f.leftRelX+f.rightRelX)/2, relY=(f.leftRelY+f.rightRelY)/2;
@@ -15,34 +15,31 @@ function solve(a:number[][],b:number[]){const n=a.length,m=a.map((r,i)=>[...r,b[
 function ridgeFit(x:number[][],y:number[],lambda:number){const p=x[0].length,xtx=Array.from({length:p},()=>Array(p).fill(0)),xty=Array(p).fill(0);for(let r=0;r<x.length;r++)for(let i=0;i<p;i++){xty[i]+=x[r][i]*y[r];for(let j=0;j<p;j++)xtx[i][j]+=x[r][i]*x[r][j];}for(let i=1;i<p;i++)xtx[i][i]+=lambda;return solve(xtx,xty);}
 function dot(a:number[],b:number[]){return a.reduce((s,v,i)=>s+v*b[i],0);}
 
-class FeatureRidgeModel implements GazeModel {
-  private bx:number[]|null=null;private by:number[]|null=null;private mean:number[]=[];private sd:number[]=[];
-  constructor(private quadratic:boolean,private lambda:number){}
+class FeatureRidgeEstimator implements GazeEstimator {
+  readonly name:string; private bx:number[]|null=null;private by:number[]|null=null;private mean:number[]=[];private sd:number[]=[];
+  constructor(private quadratic:boolean,private lambda:number){this.name=quadratic?"polynomial":"linear";}
   fit(obs:CalibrationObservation[]){if(obs.length<5)throw new Error("Need at least 5 calibration observations.");const s=standardize(obs.map(o=>baseVector(o.features)));this.mean=s.mean;this.sd=s.sd;const x=s.rows.map(r=>this.expand(r));this.bx=ridgeFit(x,obs.map(o=>o.targetX),this.lambda);this.by=ridgeFit(x,obs.map(o=>o.targetY),this.lambda);}
   private expand(r:number[]){if(!this.quadratic)return[1,...r];const important=r.slice(0,7);return[1,...r,...important.map(v=>v*v),r[0]*r[1],r[0]*r[7],r[1]*r[8]];}
   predict(f:EyeHeadFeatures){if(!this.bx||!this.by)return null;const x=this.expand(applyStandardize(baseVector(f),this.mean,this.sd));return{x:dot(this.bx,x),y:dot(this.by,x)};}
   get calibrated(){return this.bx!==null;}
 }
-
-class RbfKernelModel implements GazeModel {
-  private train:number[][]=[];private ax:number[]|null=null;private ay:number[]|null=null;private mean:number[]=[];private sd:number[]=[];
+class RbfKernelEstimator implements GazeEstimator {
+  readonly name="rbf";private train:number[][]=[];private ax:number[]|null=null;private ay:number[]|null=null;private mean:number[]=[];private sd:number[]=[];
   constructor(private gamma:number,private lambda:number){}
   private kernel(a:number[],b:number[]){let d=0;for(let i=0;i<a.length;i++)d+=(a[i]-b[i])**2;return Math.exp(-this.gamma*d);}
   fit(obs:CalibrationObservation[]){if(obs.length<5)throw new Error("Need at least 5 calibration observations.");const s=standardize(obs.map(o=>baseVector(o.features)));this.mean=s.mean;this.sd=s.sd;this.train=s.rows;const k=this.train.map((a,i)=>this.train.map((b,j)=>this.kernel(a,b)+(i===j?this.lambda:0)));this.ax=solve(k,obs.map(o=>o.targetX));this.ay=solve(k,obs.map(o=>o.targetY));}
   predict(f:EyeHeadFeatures){if(!this.ax||!this.ay)return null;const z=applyStandardize(baseVector(f),this.mean,this.sd),k=this.train.map(t=>this.kernel(z,t));return{x:dot(this.ax,k),y:dot(this.ay,k)};}
   get calibrated(){return this.ax!==null;}
 }
-
-class KnnModel implements GazeModel {
-  private train:{x:number[];tx:number;ty:number}[]=[];private mean:number[]=[];private sd:number[]=[];constructor(private k:number){}
+class KnnEstimator implements GazeEstimator {
+  readonly name="knn";private train:{x:number[];tx:number;ty:number}[]=[];private mean:number[]=[];private sd:number[]=[];constructor(private k:number){}
   fit(obs:CalibrationObservation[]){if(!obs.length)throw new Error("No calibration observations.");const s=standardize(obs.map(o=>baseVector(o.features)));this.mean=s.mean;this.sd=s.sd;this.train=s.rows.map((x,i)=>({x,tx:obs[i].targetX,ty:obs[i].targetY}));}
   predict(f:EyeHeadFeatures){if(!this.train.length)return null;const z=applyStandardize(baseVector(f),this.mean,this.sd),near=this.train.map(t=>({t,d:Math.sqrt(t.x.reduce((s,v,i)=>s+(v-z[i])**2,0))})).sort((a,b)=>a.d-b.d).slice(0,Math.min(this.k,this.train.length));let sw=0,sx=0,sy=0;for(const n of near){const w=1/(n.d+1e-3);sw+=w;sx+=w*n.t.tx;sy+=w*n.t.ty;}return{x:sx/sw,y:sy/sw};}
   get calibrated(){return this.train.length>0;}
 }
-
-export function createGazeModel(c:GazeModelConfig):GazeModel {
-  if(c.type==="linear")return new FeatureRidgeModel(false,c.ridge);
-  if(c.type==="polynomial")return new FeatureRidgeModel(true,c.ridge);
-  if(c.type==="rbf")return new RbfKernelModel(c.rbfGamma,c.ridge);
-  return new KnnModel(c.knnK);
+export function createGazeEstimator(c:GazeModelConfig):GazeEstimator {
+  if(c.type==="linear")return new FeatureRidgeEstimator(false,c.ridge);
+  if(c.type==="polynomial")return new FeatureRidgeEstimator(true,c.ridge);
+  if(c.type==="rbf")return new RbfKernelEstimator(c.rbfGamma,c.ridge);
+  return new KnnEstimator(c.knnK);
 }
