@@ -1,6 +1,8 @@
 export interface EyeTrackingSample {
   timestamp: number;
   frameId: number;
+  gazeXRaw: number | null;
+  gazeYRaw: number | null;
   gazeX: number | null;
   gazeY: number | null;
   gazeConfidence: number | null;
@@ -18,4 +20,18 @@ export interface EyeTrackingSample {
   eyeConfidence: number | null;
   trial: string | null;
   event: string | null;
+  calibrationId: string | null;
+  calibrationPoints: number | null;
+  calibrationRepetitions: number | null;
+  calibrationSettleMs: number | null;
+  calibrationSampleMs: number | null;
+  calibrationRandomized: boolean | null;
+  calibrationObservations: number | null;
+  validationMeanPx: number | null;
+  validationMedianPx: number | null;
+  validationRmsePx: number | null;
+  validationPrecisionRmsS2SPx: number | null;
+  validationPrecisionSdPx: number | null;
+  validationDataLoss: number | null;
+  validationValidPoints: number | null;
 }
