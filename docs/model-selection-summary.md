@@ -1,0 +1,1 @@
+The calibration settings screen now exposes the gaze-estimation model and model-specific hyperparameters. The selected model and hyperparameters are stored with calibration metadata and exported with recorded samples.

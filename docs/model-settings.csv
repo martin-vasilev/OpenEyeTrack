@@ -1,0 +1,5 @@
+model,ridge,rbf_gamma,knn_k,role
+linear,0.05,, ,regularized baseline
+polynomial,0.05,, ,smooth nonlinear baseline
+rbf,0.05,0.15,,higher-capacity nonlinear prototype
+knn,,,3,local non-parametric baseline
