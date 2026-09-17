@@ -29,13 +29,17 @@ pre { margin-top: 1rem; padding: 1rem; overflow-x: auto; border-radius: 10px; ba
   background: #f4f6f8;
 }
 .calibration-screen {
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
   padding: 1.5rem;
   box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .calibration-card {
   width: min(620px, 100%);
+  margin: auto 0;
   padding: 2rem;
   box-sizing: border-box;
   border-radius: 18px;
@@ -94,6 +98,15 @@ pre { margin-top: 1rem; padding: 1rem; overflow-x: auto; border-radius: 10px; ba
   box-sizing: border-box;
 }
 [hidden] { display: none !important; }
+
+@media (max-height: 850px) {
+  .calibration-screen { padding: .75rem 1.5rem; }
+  .calibration-card { margin: 0; padding: 1.25rem 1.5rem; }
+  .calibration-card h2 { margin-bottom: .5rem; font-size: 1.6rem; }
+  .settings-grid { gap: .7rem 1rem; margin: .75rem 0 .5rem; }
+  .calibration-note { margin: .6rem 0; }
+  .calibration-actions { margin-top: .75rem; }
+}
 
 @media (max-width: 600px) {
   .settings-grid { grid-template-columns: 1fr; }
