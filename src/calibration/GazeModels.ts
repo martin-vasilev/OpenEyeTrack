@@ -18,8 +18,8 @@ function dot(a:number[],b:number[]){return a.reduce((s,v,i)=>s+v*b[i],0);}
 class FeatureRidgeModel implements GazeModel {
   private bx:number[]|null=null;private by:number[]|null=null;private mean:number[]=[];private sd:number[]=[];
   constructor(private quadratic:boolean,private lambda:number){}
-  fit(obs:CalibrationObservation[]){if(obs.length<5)throw new Error("Need at least 5 calibration observations.");const s=standardize(obs.map(o=>baseVector(o.features)));this.mean=s.mean;this.sd=s.sd;const expand=(r:number[])=>this.expand(r);const x=s.rows.map(expand);this.bx=ridgeFit(x,obs.map(o=>o.targetX),this.lambda);this.by=ridgeFit(x,obs.map(o=>o.targetY),this.lambda);}
-  private expand(r:number[]){if(!this.quadratic)return[1,...r];const important=r.slice(0,7);return[1,...r,...important.map(v=>v*v),important[0]*important[1],important[0]*important[7]??0,important[1]*important[8]??0];}
+  fit(obs:CalibrationObservation[]){if(obs.length<5)throw new Error("Need at least 5 calibration observations.");const s=standardize(obs.map(o=>baseVector(o.features)));this.mean=s.mean;this.sd=s.sd;const x=s.rows.map(r=>this.expand(r));this.bx=ridgeFit(x,obs.map(o=>o.targetX),this.lambda);this.by=ridgeFit(x,obs.map(o=>o.targetY),this.lambda);}
+  private expand(r:number[]){if(!this.quadratic)return[1,...r];const important=r.slice(0,7);return[1,...r,...important.map(v=>v*v),r[0]*r[1],r[0]*r[7],r[1]*r[8]];}
   predict(f:EyeHeadFeatures){if(!this.bx||!this.by)return null;const x=this.expand(applyStandardize(baseVector(f),this.mean,this.sd));return{x:dot(this.bx,x),y:dot(this.by,x)};}
   get calibrated(){return this.bx!==null;}
 }
@@ -35,7 +35,7 @@ class RbfKernelModel implements GazeModel {
 
 class KnnModel implements GazeModel {
   private train:{x:number[];tx:number;ty:number}[]=[];private mean:number[]=[];private sd:number[]=[];constructor(private k:number){}
-  fit(obs:CalibrationObservation[]){const s=standardize(obs.map(o=>baseVector(o.features)));this.mean=s.mean;this.sd=s.sd;this.train=s.rows.map((x,i)=>({x,tx:obs[i].targetX,ty:obs[i].targetY}));}
+  fit(obs:CalibrationObservation[]){if(!obs.length)throw new Error("No calibration observations.");const s=standardize(obs.map(o=>baseVector(o.features)));this.mean=s.mean;this.sd=s.sd;this.train=s.rows.map((x,i)=>({x,tx:obs[i].targetX,ty:obs[i].targetY}));}
   predict(f:EyeHeadFeatures){if(!this.train.length)return null;const z=applyStandardize(baseVector(f),this.mean,this.sd),near=this.train.map(t=>({t,d:Math.sqrt(t.x.reduce((s,v,i)=>s+(v-z[i])**2,0))})).sort((a,b)=>a.d-b.d).slice(0,Math.min(this.k,this.train.length));let sw=0,sx=0,sy=0;for(const n of near){const w=1/(n.d+1e-3);sw+=w;sx+=w*n.t.tx;sy+=w*n.t.ty;}return{x:sx/sw,y:sy/sw};}
   get calibrated(){return this.train.length>0;}
 }
