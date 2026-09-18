@@ -1,7 +1,7 @@
 import type { EyeHeadFeatures } from "../features/EyeHeadFeatures";
 
 export interface CalibrationObservation { targetX: number; targetY: number; features: EyeHeadFeatures; }
-export interface GazePrediction { x: number; y: number; }
+export interface GazePrediction { x: number; y: number; confidence?: number; support?: number; extrapolating?: boolean; }
 
 const FEATURE_COUNT = 12;
 const RIDGE = 1e-4;
@@ -55,7 +55,7 @@ export class LinearGazeModel {
   predict(features: EyeHeadFeatures): GazePrediction | null {
     if (!this.betaX || !this.betaY) return null;
     const x = vector(features), dot = (beta: number[]) => beta.reduce((sum, b, i) => sum + b * x[i], 0);
-    return { x: dot(this.betaX), y: dot(this.betaY) };
+    return { x: dot(this.betaX), y: dot(this.betaY), confidence: 1, support: 1, extrapolating: false };
   }
   get calibrated(): boolean { return this.betaX !== null && this.betaY !== null; }
 }
