@@ -1,5 +1,5 @@
 import type { EyeHeadFeatures } from "../features/EyeHeadFeatures";
-import type { CalibrationObservation, GazePrediction } from "./LinearGazeModel";
+import type { CalibrationObservation } from "./LinearGazeModel";
 import type { GazeEstimator } from "../gaze/GazeEstimator";
 
 export type GazeModelType = "linear" | "polynomial" | "rbf" | "knn";
