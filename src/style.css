@@ -62,3 +62,5 @@ pre { margin-top:1rem; padding:1rem; overflow-x:auto; border-radius:10px; backgr
 #validation-results .validation-map-summary{margin:.45rem 0 0;font-size:.9rem}
 #validation-results .calibration-actions{margin-top:.75rem}
 @media(max-height:760px){#validation-results .results-card{padding:.8rem 1rem}#validation-results .metric-grid{gap:.5rem}#validation-results .validation-map-heading p{display:none}#validation-results .validation-map-wrap canvas{max-height:34vh}}
+
+.camera-start{display:flex;justify-content:flex-start;margin:1.25rem 0 .5rem}.camera-start .primary{font-weight:800;padding:.85rem 1.25rem}
