@@ -6,6 +6,8 @@ export interface EyeTrackingSample {
   gazeX: number | null;
   gazeY: number | null;
   gazeConfidence: number | null;
+  gazeOutlier: boolean | null;
+  gazeRawDeviationPx: number | null;
   pupilLeft: number | null;
   pupilRight: number | null;
   pupilLeftConfidence: number | null;
