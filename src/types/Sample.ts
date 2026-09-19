@@ -16,6 +16,7 @@ export interface EyeTrackingSample {
   headYaw: number | null;
   headPitch: number | null;
   headRoll: number | null;
+  headPoseDistanceFromCalibration: number | null;
   faceConfidence: number | null;
   eyeConfidence: number | null;
   trial: string | null;
