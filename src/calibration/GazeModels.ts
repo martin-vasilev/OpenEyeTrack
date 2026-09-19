@@ -9,8 +9,13 @@ function baseVector(f: EyeHeadFeatures): number[] {
   const relX=(f.leftRelX+f.rightRelX)/2, relY=(f.leftRelY+f.rightRelY)/2;
   return [relX,relY,f.leftRelX-f.rightRelX,f.leftRelY-f.rightRelY,f.headX,f.headY,f.headZ,f.headYaw??0,f.headPitch??0,f.headRoll??0];
 }
-function standardize(rows:number[][]){const p=rows[0].length,mean=Array(p).fill(0),sd=Array(p).fill(0);for(const r of rows)for(let j=0;j<p;j++)mean[j]+=r[j]/rows.length;for(const r of rows)for(let j=0;j<p;j++)sd[j]+=(r[j]-mean[j])**2;for(let j=0;j<p;j++)sd[j]=Math.sqrt(sd[j]/Math.max(1,rows.length-1))||1;return{mean,sd,rows:rows.map(r=>r.map((v,j)=>(v-mean[j])/sd[j]))};}
-function applyStandardize(r:number[],mean:number[],sd:number[]){return r.map((v,j)=>(v-mean[j])/sd[j]);}
+// Floors prevent tiny calibration variance from turning ordinary webcam noise into
+// very large standardized feature changes. Indices follow baseVector().
+const FEATURE_SD_FLOORS=[0.01,0.01,0.01,0.01,0.02,0.02,0.015,5,5,5];
+// Eye-relative features drive gaze. Head pose is contextual correction only.
+const FEATURE_WEIGHTS=[1,1,0.8,0.8,0.25,0.25,0.15,0.15,0.15,0.15];
+function standardize(rows:number[][]){const p=rows[0].length,mean=Array(p).fill(0),sd=Array(p).fill(0);for(const r of rows)for(let j=0;j<p;j++)mean[j]+=r[j]/rows.length;for(const r of rows)for(let j=0;j<p;j++)sd[j]+=(r[j]-mean[j])**2;for(let j=0;j<p;j++){const observed=Math.sqrt(sd[j]/Math.max(1,rows.length-1));sd[j]=Math.max(Number.isFinite(observed)?observed:0,FEATURE_SD_FLOORS[j]??1e-3);}return{mean,sd,rows:rows.map(r=>r.map((v,j)=>((v-mean[j])/sd[j])*(FEATURE_WEIGHTS[j]??1)))};}
+function applyStandardize(r:number[],mean:number[],sd:number[]){return r.map((v,j)=>((v-mean[j])/sd[j])*(FEATURE_WEIGHTS[j]??1));}
 function solve(a:number[][],b:number[]){const n=a.length,m=a.map((r,i)=>[...r,b[i]]);for(let c=0;c<n;c++){let p=c;for(let r=c+1;r<n;r++)if(Math.abs(m[r][c])>Math.abs(m[p][c]))p=r;[m[c],m[p]]=[m[p],m[c]];const d=m[c][c];if(Math.abs(d)<1e-12)throw new Error("Gaze model matrix is singular.");for(let j=c;j<=n;j++)m[c][j]/=d;for(let r=0;r<n;r++){if(r===c)continue;const f=m[r][c];for(let j=c;j<=n;j++)m[r][j]-=f*m[c][j];}}return m.map(r=>r[n]);}
 function ridgeFit(x:number[][],y:number[],lambda:number){const p=x[0].length,xtx=Array.from({length:p},()=>Array(p).fill(0)),xty=Array(p).fill(0);for(let r=0;r<x.length;r++)for(let i=0;i<p;i++){xty[i]+=x[r][i]*y[r];for(let j=0;j<p;j++)xtx[i][j]+=x[r][i]*x[r][j];}for(let i=1;i<p;i++)xtx[i][i]+=lambda;return solve(xtx,xty);}
 function dot(a:number[],b:number[]){return a.reduce((s,v,i)=>s+v*b[i],0);}
