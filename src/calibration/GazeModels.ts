@@ -7,13 +7,13 @@ export interface GazeModelConfig { type: GazeModelType; ridge: number; rbfGamma:
 
 function baseVector(f: EyeHeadFeatures): number[] {
   const relX=(f.leftRelX+f.rightRelX)/2, relY=(f.leftRelY+f.rightRelY)/2;
-  return [relX,relY,f.leftRelX-f.rightRelX,f.leftRelY-f.rightRelY,f.headX,f.headY,f.headZ,f.headYaw??0,f.headPitch??0,f.headRoll??0];
+  return [relX,relY,f.leftRelX-f.rightRelX,f.leftRelY-f.rightRelY];
 }
 // Floors prevent tiny calibration variance from turning ordinary webcam noise into
 // very large standardized feature changes. Indices follow baseVector().
-const FEATURE_SD_FLOORS=[0.01,0.01,0.01,0.01,0.02,0.02,0.015,5,5,5];
+const FEATURE_SD_FLOORS=[0.01,0.01,0.01,0.01];
 // Eye-relative features drive gaze. Head pose is contextual correction only.
-const RBF_DISTANCE_WEIGHTS=[1,1,0.8,0.8,0.25,0.25,0.15,0.15,0.15,0.15];
+const RBF_DISTANCE_WEIGHTS=[1,1,0.8,0.8];
 function standardize(rows:number[][]){const p=rows[0].length,mean=Array(p).fill(0),sd=Array(p).fill(0);for(const r of rows)for(let j=0;j<p;j++)mean[j]+=r[j]/rows.length;for(const r of rows)for(let j=0;j<p;j++)sd[j]+=(r[j]-mean[j])**2;for(let j=0;j<p;j++){const observed=Math.sqrt(sd[j]/Math.max(1,rows.length-1));sd[j]=Math.max(Number.isFinite(observed)?observed:0,FEATURE_SD_FLOORS[j]??1e-3);}return{mean,sd,rows:rows.map(r=>r.map((v,j)=>(v-mean[j])/sd[j]))};}
 function applyStandardize(r:number[],mean:number[],sd:number[]){return r.map((v,j)=>(v-mean[j])/sd[j]);}
 function weightRbfDistance(r:number[]){return r.map((v,j)=>v*(RBF_DISTANCE_WEIGHTS[j]??1));}
