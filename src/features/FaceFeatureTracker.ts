@@ -42,11 +42,6 @@ export class FaceFeatureTracker {
     return this.landmarker.detectForVideo(video, timestampMs);
   }
 
-  detectFrame(frame: VideoFrame, timestampMs: number): FaceLandmarkerResult | null {
-    if (!this.landmarker) return null;
-    return this.landmarker.detectForVideo(frame, timestampMs);
-  }
-
   close(): void {
     this.landmarker?.close();
     this.landmarker = null;
