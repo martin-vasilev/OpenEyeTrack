@@ -236,39 +236,6 @@ function processCapturedFrame(frame:VideoFrame){
     captureWorker?.postMessage({type:"next"});
   }
 }
-function startDecoupledAcquisition():boolean{
-  const Processor=(globalThis as any).MediaStreamTrackProcessor;
-  if(!Processor||typeof VideoFrame==="undefined")return false;
-  try{
-    captureFrames=0;captureDropped=0;captureQueueDepth=0;
-    captureTrack=tracker.cloneVideoTrack();
-    const processor=new Processor({track:captureTrack});
-    captureWorker=new Worker(new URL("./workers/FrameCaptureWorker.ts",import.meta.url),{type:"module"});
-    captureWorker.onmessage=(event:MessageEvent<any>)=>{const msg=event.data;if(msg.type==="frame"&&msg.frame){captureFrames=msg.captured??captureFrames;captureDropped=msg.dropped??captureDropped;captureQueueDepth=msg.queueDepth??captureQueueDepth;processCapturedFrame(msg.frame);}};
-    const readable=processor.readable;
-    captureWorker.postMessage({type:"init",readable,maxQueue:8},[readable]);
-    captureWorker.postMessage({type:"next"});
-    return true;
-  }catch(e){console.warn("[OpenEyeTrack] Decoupled acquisition unavailable; using fallback.",e);stopDecoupledAcquisition();return false;}
-}
-function stopDecoupledAcquisition(){captureWorker?.postMessage({type:"stop"});captureWorker?.terminate();captureWorker=null;captureTrack?.stop();captureTrack=null;captureQueueDepth=0;}
-function processCapturedFrame(frame:VideoFrame){
-  try{
-    const pipelineStarted=performance.now(),selected=(featureModelInput?.value??"elg")as EyeFeatureModel,acquisitionMode=(elgAcquisitionModeInput?.value??"queued")as "queued"|"skip-while-busy";elgTracker.setAcquisitionMode(acquisitionMode);
-    const detectStarted=performance.now(),result=faceTracker.detectFrame(frame,frame.timestamp/1000),mediaPipeDetectMs=performance.now()-detectStarted;
-    let elgEnqueueMs:number|null=null,featureExtractionMs:number|null=null,gazePredictionMs:number|null=null;
-    if(result){detectedFaces=result.faceLandmarks.length;const face=result.faceLandmarks[0];if(face){
-      latestFace=face;
-      if(selected==="elg"){const t=performance.now();void elgTracker.estimateFrame(frame,face).then(v=>{if(v)latestElg=v;});elgEnqueueMs=performance.now()-t;}else void appearanceTracker.estimateFrame(frame,face).then(v=>{if(v)latestAppearance=v;});
-      const matrix=result.facialTransformationMatrixes?.[0]?.data,featureStarted=performance.now();latestFeatures=extractEyeHeadFeatures(face,matrix?Array.from(matrix):undefined);featureExtractionMs=performance.now()-featureStarted;
-      if(latestFeatures&&selected==="elg"&&latestElg){latestFeatures.elgLeftRelX=latestElg.leftRelX;latestFeatures.elgLeftRelY=latestElg.leftRelY;latestFeatures.elgRightRelX=latestElg.rightRelX;latestFeatures.elgRightRelY=latestElg.rightRelY;latestFeatures.elgConfidence=(latestElg.leftConfidence+latestElg.rightConfidence)/2;latestFeatures.elgLeftConfidence=latestElg.leftConfidence;latestFeatures.elgRightConfidence=latestElg.rightConfidence;latestFeatures.elgInferenceMs=latestElg.inferenceMs;latestFeatures.elgTimestampMs=latestElg.timestampMs;latestFeatures.elgAgeMs=Math.max(0,performance.now()-latestElg.acquisitionTimestampMs);latestFeatures.elgSequenceId=latestElg.sequenceId;latestFeatures.elgAcquisitionTimestampMs=latestElg.acquisitionTimestampMs;latestFeatures.elgProcessedTimestampMs=latestElg.processedTimestampMs;latestFeatures.elgLatencyMs=latestElg.latencyMs;latestFeatures.elgQueueDepth=elgTracker.queueDepth;latestFeatures.elgLeftRelXRaw=latestElg.leftRelXRaw;latestFeatures.elgLeftRelYRaw=latestElg.leftRelYRaw;latestFeatures.elgRightRelXRaw=latestElg.rightRelXRaw;latestFeatures.elgRightRelYRaw=latestElg.rightRelYRaw;latestFeatures.elgBinocularReliability=latestElg.binocularReliability;}else if(latestFeatures&&selected!=="mediapipe"&&latestAppearance){latestFeatures.appearanceGazeYaw=latestAppearance.yaw;latestFeatures.appearanceGazePitch=latestAppearance.pitch;}
-      tracker.setFeatures(latestFeatures);if(recording&&latestFeatures){const violation=headGuard.check(latestFeatures);if(violation)interruptForHeadMovement(violation.reason);}
-      const gazeStarted=performance.now(),raw=latestFeatures?calibration.model.predict(latestFeatures):null,filterResult=raw?gazeFilter.filter(raw):null,filtered=filterResult?.gaze??null;gazePredictionMs=performance.now()-gazeStarted;tracker.setGaze(raw,filtered,filterResult?.outlier??null,filterResult?.rawDeviationPx??null);
-      if(showGaze.checked&&filtered&&!calibrationActive&&calibrationSetup.hidden&&headWarning.hidden){gazeDot.hidden=false;gazeDot.style.left=`${filtered.x}px`;gazeDot.style.top=`${filtered.y}px`;}else gazeDot.hidden=true;
-    }}
-    tracker.setPipelineDiagnostics({totalMs:performance.now()-pipelineStarted,mediaPipeDetectMs,elgEnqueueMs,featureExtractionMs,gazePredictionMs,overlayRenderMs:null,elgAcquisitionMode:acquisitionMode});
-  }finally{frame.close();captureWorker?.postMessage({type:"next"});}
-}
 function runLandmarks(){
   // requestAnimationFrame follows the display (often 60+ Hz), not the webcam.
   // Never run MediaPipe/ELG twice against the same 30-Hz camera frame.
