@@ -1,6 +1,8 @@
 import * as ort from "onnxruntime-web";
 import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
 
+ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/";
+
 export interface ElgEyeFeatures {
   leftRelX: number;
   leftRelY: number;
@@ -26,10 +28,12 @@ export class ElgEyeTracker {
 
   async initialize(): Promise<void> {
     if (this.session) return;
-    this.session = await ort.InferenceSession.create(MODEL_URL, {
+    const load = ort.InferenceSession.create(MODEL_URL, {
       executionProviders: ["wasm"],
       graphOptimizationLevel: "all"
     });
+    const timeout = new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error("ELG model loading timed out after 30 seconds.")), 30000));
+    this.session = await Promise.race([load, timeout]);
   }
 
   async estimate(video: HTMLVideoElement, landmarks: NormalizedLandmark[], force=false): Promise<ElgEyeFeatures | null> {
