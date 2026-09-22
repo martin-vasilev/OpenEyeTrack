@@ -33,7 +33,6 @@ const RIGHT_EYE = { inner: 133, outer: 33 };
 export class ElgEyeTracker {
   private session: ort.InferenceSession | null = null;
   private canvas = document.createElement("canvas");
-  private busy = false;
   private lastRun = 0;
   private readonly minIntervalMs = 33;
   private history: ElgEyeFeatures[] = [];
