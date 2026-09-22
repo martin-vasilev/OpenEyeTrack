@@ -34,6 +34,11 @@ export interface EyeHeadFeatures {
   elgProcessedTimestampMs: number | null;
   elgLatencyMs: number | null;
   elgQueueDepth: number | null;
+  elgLeftRelXRaw: number | null;
+  elgLeftRelYRaw: number | null;
+  elgRightRelXRaw: number | null;
+  elgRightRelYRaw: number | null;
+  elgBinocularReliability: number | null;
 }
 
 const LEFT_IRIS = [474, 475, 476, 477];
@@ -94,6 +99,7 @@ export function extractEyeHeadFeatures(landmarks: NormalizedLandmark[], matrixDa
     appearanceGazeYaw: null, appearanceGazePitch: null,
     elgLeftRelX: null, elgLeftRelY: null, elgRightRelX: null, elgRightRelY: null, elgConfidence: null,
     elgLeftConfidence: null, elgRightConfidence: null, elgInferenceMs: null, elgTimestampMs: null, elgAgeMs: null,
-    elgSequenceId: null, elgAcquisitionTimestampMs: null, elgProcessedTimestampMs: null, elgLatencyMs: null, elgQueueDepth: null
+    elgSequenceId: null, elgAcquisitionTimestampMs: null, elgProcessedTimestampMs: null, elgLatencyMs: null, elgQueueDepth: null,
+    elgLeftRelXRaw: null, elgLeftRelYRaw: null, elgRightRelXRaw: null, elgRightRelYRaw: null, elgBinocularReliability: null
   };
 }
