@@ -75,3 +75,7 @@ pre { margin-top:1rem; padding:1rem; overflow-x:auto; border-radius:10px; backgr
 .calibration-target[data-head-pose="right"]::after{content:"Turn head slightly right · keep eyes on target"}
 .calibration-target[data-head-pose="up"]::after{content:"Raise chin slightly · keep eyes on target"}
 .calibration-target[data-head-pose="down"]::after{content:"Lower chin slightly · keep eyes on target"}
+
+#pose-position-screen .head-position-view{position:relative}
+#pose-position-video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+#pose-position-canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
