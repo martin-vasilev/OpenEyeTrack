@@ -3,7 +3,7 @@ import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
 
 // ELG currently uses the standard ONNX Runtime Web WASM build. Keep its
 // auxiliary modules version-matched and same-origin.
-ort.env.wasm.wasmPaths = "/OpenEyeTrack/ort/";
+ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/";
 
 export interface ElgEyeFeatures {
   leftRelX: number;
@@ -47,8 +47,8 @@ export class ElgEyeTracker {
     // Disable graph rewrites for this legacy converted TensorFlow graph. ORT's
     // optimization pass can infer incompatible dimensions in the ELG graph
     // before inference begins; the model previously ran without these rewrites.
-    this.session=await timeout(ort.InferenceSession.create(MODEL_URL,{executionProviders:["wasm"],graphOptimizationLevel:"disabled"}));
-    this.backend="wasm"; console.info("[OpenEyeTrack ELG] Using WASM backend (WebGPU disabled for incompatible ELG graph)");
+    this.session=await timeout(ort.InferenceSession.create(MODEL_URL,{executionProviders:["wasm"],graphOptimizationLevel:"all"}));
+    this.backend="wasm"; console.info("[OpenEyeTrack ELG] Using restored known-working WASM configuration");
   }
 
   async estimate(video: HTMLVideoElement, landmarks: NormalizedLandmark[], force=false): Promise<ElgEyeFeatures | null> {
