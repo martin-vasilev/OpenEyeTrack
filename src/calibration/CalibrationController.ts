@@ -69,7 +69,7 @@ function selectStableCalibrationSamples(samples:EyeHeadFeatures[]):EyeHeadFeatur
 function elgRawDistance(a:EyeHeadFeatures,b:EyeHeadFeatures){
   const av=[a.elgLeftRelXRaw,a.elgLeftRelYRaw,a.elgRightRelXRaw,a.elgRightRelYRaw],bv=[b.elgLeftRelXRaw,b.elgLeftRelYRaw,b.elgRightRelXRaw,b.elgRightRelYRaw];
   if(av.some(v=>v===null)||bv.some(v=>v===null))return 0;
-  return Math.sqrt(av.reduce((sum,v,i)=>sum+((v as number)-(bv[i] as number))**2,0)/4);
+  return Math.sqrt(av.reduce<number>((sum,v,i)=>sum+((v as number)-(bv[i] as number))**2,0)/4);
 }
 function quantile(v:number[],q:number){if(!v.length)return 0;const s=[...v].sort((a,b)=>a-b),p=(s.length-1)*q,l=Math.floor(p),h=Math.ceil(p);return s[l]+(s[h]-s[l])*(p-l);}
 function rmsS2S(p:GazePrediction[]){if(p.length<2)return 0;return Math.sqrt(mean(p.slice(1).map((q,i)=>(q.x-p[i].x)**2+(q.y-p[i].y)**2)));}function spatialSd(p:GazePrediction[]){const mx=mean(p.map(q=>q.x)),my=mean(p.map(q=>q.y));return Math.sqrt(mean(p.map(q=>(q.x-mx)**2+(q.y-my)**2)));}function mean(v:number[]){return v.reduce((a,b)=>a+b,0)/v.length;}function wait(ms:number){return new Promise<void>(r=>setTimeout(r,ms));}function median(v:number[]){const s=[...v].sort((a,b)=>a-b),m=Math.floor(s.length/2);return s.length%2?s[m]:(s[m-1]+s[m])/2;}function shuffle<T>(v:T[]){for(let i=v.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[v[i],v[j]]=[v[j],v[i]];}}
