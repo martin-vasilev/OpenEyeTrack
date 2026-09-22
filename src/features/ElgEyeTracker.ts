@@ -1,4 +1,4 @@
-import * as ort from "onnxruntime-web";
+import * as ort from "onnxruntime-web/webgpu";
 import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
 
 ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/";
@@ -26,6 +26,9 @@ export class ElgEyeTracker {
   private lastRun = 0;
   private readonly minIntervalMs = 33;
   private history: ElgEyeFeatures[] = [];
+  private backend: "webgpu" | "wasm" = "wasm";
+
+  get activeBackend(): "webgpu" | "wasm" { return this.backend; }
 
   reset(): void { this.history = []; }
 
@@ -37,12 +40,16 @@ export class ElgEyeTracker {
 
   async initialize(): Promise<void> {
     if (this.session) return;
-    const load = ort.InferenceSession.create(MODEL_URL, {
-      executionProviders: ["wasm"],
-      graphOptimizationLevel: "all"
-    });
-    const timeout = new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error("ELG model loading timed out after 30 seconds.")), 30000));
-    this.session = await Promise.race([load, timeout]);
+    const timeout = <T>(p:Promise<T>) => Promise.race([p,new Promise<never>((_,reject)=>window.setTimeout(()=>reject(new Error("ELG model loading timed out after 30 seconds.")),30000))]);
+    const webgpuAvailable = "gpu" in navigator;
+    if(webgpuAvailable){
+      try{
+        this.session=await timeout(ort.InferenceSession.create(MODEL_URL,{executionProviders:[{name:"webgpu",preferredLayout:"NHWC",storageBufferCacheMode:"bucket",uniformBufferCacheMode:"bucket",defaultBufferCacheMode:"bucket"}],graphOptimizationLevel:"all"}));
+        this.backend="webgpu"; console.info("[OpenEyeTrack ELG] Using WebGPU acceleration"); return;
+      }catch(e){console.warn("[OpenEyeTrack ELG] WebGPU unavailable for this model/device; falling back to WASM.",e);}
+    }
+    this.session=await timeout(ort.InferenceSession.create(MODEL_URL,{executionProviders:["wasm"],graphOptimizationLevel:"all"}));
+    this.backend="wasm"; console.info("[OpenEyeTrack ELG] Using WASM fallback");
   }
 
   async estimate(video: HTMLVideoElement, landmarks: NormalizedLandmark[], force=false): Promise<ElgEyeFeatures | null> {
