@@ -8,7 +8,9 @@ export interface GazeModelConfig { type: GazeModelType; ridge: number; rbfGamma:
 function baseVector(f: EyeHeadFeatures): number[] {
   if (f.elgLeftRelX !== null && f.elgLeftRelY !== null && f.elgRightRelX !== null && f.elgRightRelY !== null) {
     const x=(f.elgLeftRelX+f.elgRightRelX)/2, y=(f.elgLeftRelY+f.elgRightRelY)/2;
-    return [x,y,f.elgLeftRelX-f.elgRightRelX,f.elgLeftRelY-f.elgRightRelY];
+    // Common binocular movement is the primary gaze signal. Disagreement is
+    // retained as a smaller correction term because it is substantially noisier.
+    return [x,y,(f.elgLeftRelX-f.elgRightRelX)*0.35,(f.elgLeftRelY-f.elgRightRelY)*0.35];
   }
   if (f.appearanceGazeYaw !== null && f.appearanceGazePitch !== null) return [f.appearanceGazeYaw, f.appearanceGazePitch];
   const relX=(f.leftRelX+f.rightRelX)/2, relY=(f.leftRelY+f.rightRelY)/2;
@@ -16,7 +18,7 @@ function baseVector(f: EyeHeadFeatures): number[] {
 }
 // Floors prevent tiny calibration variance from turning ordinary webcam noise into
 // very large standardized feature changes. Indices follow baseVector().
-const FEATURE_SD_FLOORS=[0.01,0.01,0.01,0.01];
+const FEATURE_SD_FLOORS=[0.008,0.008,0.015,0.015];
 // Eye-relative features drive gaze. Head pose is contextual correction only.
 const RBF_DISTANCE_WEIGHTS=[1,1,0.8,0.8];
 function standardize(rows:number[][]){const p=rows[0].length,mean=Array(p).fill(0),sd=Array(p).fill(0);for(const r of rows)for(let j=0;j<p;j++)mean[j]+=r[j]/rows.length;for(const r of rows)for(let j=0;j<p;j++)sd[j]+=(r[j]-mean[j])**2;for(let j=0;j<p;j++){const observed=Math.sqrt(sd[j]/Math.max(1,rows.length-1));sd[j]=Math.max(Number.isFinite(observed)?observed:0,FEATURE_SD_FLOORS[j]??1e-3);}return{mean,sd,rows:rows.map(r=>r.map((v,j)=>(v-mean[j])/sd[j]))};}
@@ -30,7 +32,7 @@ class FeatureRidgeEstimator implements GazeEstimator {
   readonly name:string; private bx:number[]|null=null;private by:number[]|null=null;private mean:number[]=[];private sd:number[]=[];
   constructor(private quadratic:boolean,private lambda:number){this.name=quadratic?"polynomial":"linear";}
   fit(obs:CalibrationObservation[]){if(obs.length<5)throw new Error("Need at least 5 calibration observations.");const s=standardize(obs.map(o=>baseVector(o.features)));this.mean=s.mean;this.sd=s.sd;const x=s.rows.map(r=>this.expand(r));this.bx=ridgeFit(x,obs.map(o=>o.targetX),this.lambda);this.by=ridgeFit(x,obs.map(o=>o.targetY),this.lambda);}
-  private expand(r:number[]){if(!this.quadratic)return[1,...r];const important=r.slice(0,7);return[1,...r,...important.map(v=>v*v),r[0]*r[1],r[0]*r[7],r[1]*r[8]];}
+  private expand(r:number[]){if(!this.quadratic)return[1,...r];const [x=0,y=0,dx=0,dy=0]=r;return[1,x,y,dx,dy,x*x,y*y,x*y,x*dx,y*dy];}
   predict(f:EyeHeadFeatures){if(!this.bx||!this.by)return null;const x=this.expand(applyStandardize(baseVector(f),this.mean,this.sd));return{x:dot(this.bx,x),y:dot(this.by,x),confidence:1,support:1,extrapolating:false};}
   get calibrated(){return this.bx!==null;}
 }
