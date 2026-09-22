@@ -7,7 +7,7 @@ import { buildHeadPoseReference, type HeadPoseReference } from "../qc/Calibratio
 export type CalibrationPointCount = 5 | 9 | 13;
 export type TargetShape = "bullseye" | "circle" | "dot" | "cross";
 export interface CalibrationTargetConfig { sizePx:number; shape:TargetShape; color:string; }
-export interface CalibrationConfig { points:CalibrationPointCount; settleMs:number; sampleMs:number; repetitions:number; randomize:boolean; adaptiveTargets:boolean; target:CalibrationTargetConfig; model:GazeModelConfig; }
+export interface CalibrationConfig { featureModel:"mediapipe"|"mobileone_s0"|"resnet34"; points:CalibrationPointCount; settleMs:number; sampleMs:number; repetitions:number; randomize:boolean; adaptiveTargets:boolean; target:CalibrationTargetConfig; model:GazeModelConfig; }
 export interface CalibrationSummary { id:string; config:CalibrationConfig; observations:number; newObservations:number; retainedObservations:number; targetsCompleted:number; samplesCollected:number; adaptiveUsed:boolean; headPoseReference:HeadPoseReference|null; }
 export interface ValidationPointResult { targetX:number; targetY:number; samplesExpected:number; samplesValid:number; accuracyPx:number; precisionRmsS2SPx:number; precisionSdPx:number; }
 export interface ValidationResult { meanPx:number; medianPx:number; rmsePx:number; precisionRmsS2SPx:number; precisionSdPx:number; dataLoss:number; points:number; pointResults:ValidationPointResult[]; }
