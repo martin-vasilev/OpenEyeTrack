@@ -5,7 +5,7 @@ import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
 // runtime location so it does not try to fetch its WASM files from the site root.
 ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/";
 
-export type EyeFeatureModel = "mediapipe" | "mobileone_s0" | "resnet34";
+export type EyeFeatureModel = "mediapipe" | "elg" | "mobileone_s0" | "resnet34";
 
 export interface AppearanceGazeFeatures {
   yaw: number;
@@ -14,7 +14,7 @@ export interface AppearanceGazeFeatures {
 }
 
 const BASE_URL = "/OpenEyeTrack/";
-const MODEL_URLS: Record<Exclude<EyeFeatureModel, "mediapipe">, string> = {
+const MODEL_URLS: Record<Exclude<EyeFeatureModel, "mediapipe" | "elg">, string> = {
   mobileone_s0: `${BASE_URL}models/mobileone_s0_gaze.onnx`,
   resnet34: `${BASE_URL}models/resnet34_gaze.onnx`
 };
@@ -30,10 +30,10 @@ export class AppearanceGazeTracker {
   get activeModel(): EyeFeatureModel { return this.model; }
 
   async setModel(model: EyeFeatureModel): Promise<void> {
-    if (model === this.model && (model === "mediapipe" || this.session)) return;
+    if (model === this.model && (model === "mediapipe" || model === "elg" || this.session)) return;
     this.model = model;
     this.session = null;
-    if (model === "mediapipe") return;
+    if (model === "mediapipe" || model === "elg") return;
     const load = ort.InferenceSession.create(MODEL_URLS[model], {
       executionProviders: ["wasm"],
       graphOptimizationLevel: "all"
@@ -42,7 +42,7 @@ export class AppearanceGazeTracker {
   }
 
   async estimate(video: HTMLVideoElement, landmarks: NormalizedLandmark[], force=false): Promise<AppearanceGazeFeatures | null> {
-    if (this.model === "mediapipe" || !this.session || this.busy || video.videoWidth === 0) return null;
+    if (this.model === "mediapipe" || this.model === "elg" || !this.session || this.busy || video.videoWidth === 0) return null;
     const now = performance.now();
     if (!force && now - this.lastRun < this.minIntervalMs) return null;
     this.lastRun = now; this.busy = true;
