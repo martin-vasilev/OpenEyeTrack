@@ -24,6 +24,11 @@ export interface EyeHeadFeatures {
   elgRightRelX: number | null;
   elgRightRelY: number | null;
   elgConfidence: number | null;
+  elgLeftConfidence: number | null;
+  elgRightConfidence: number | null;
+  elgInferenceMs: number | null;
+  elgTimestampMs: number | null;
+  elgAgeMs: number | null;
 }
 
 const LEFT_IRIS = [474, 475, 476, 477];
@@ -82,6 +87,7 @@ export function extractEyeHeadFeatures(landmarks: NormalizedLandmark[], matrixDa
     headX: faceCenter.x, headY: faceCenter.y, headZ: faceWidth,
     headYaw: yaw, headPitch: pitch, headRoll: roll,
     appearanceGazeYaw: null, appearanceGazePitch: null,
-    elgLeftRelX: null, elgLeftRelY: null, elgRightRelX: null, elgRightRelY: null, elgConfidence: null
+    elgLeftRelX: null, elgLeftRelY: null, elgRightRelX: null, elgRightRelY: null, elgConfidence: null,
+    elgLeftConfidence: null, elgRightConfidence: null, elgInferenceMs: null, elgTimestampMs: null, elgAgeMs: null
   };
 }

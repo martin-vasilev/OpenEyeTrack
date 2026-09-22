@@ -34,6 +34,15 @@ export interface EyeTrackingSample {
   calibrationHeadRollSd: number | null;
   faceConfidence: number | null;
   eyeConfidence: number | null;
+  elgLeftRelX: number | null;
+  elgLeftRelY: number | null;
+  elgRightRelX: number | null;
+  elgRightRelY: number | null;
+  elgLeftConfidence: number | null;
+  elgRightConfidence: number | null;
+  elgInferenceMs: number | null;
+  elgTimestampMs: number | null;
+  elgAgeMs: number | null;
   trial: string | null;
   event: string | null;
   calibrationId: string | null;
