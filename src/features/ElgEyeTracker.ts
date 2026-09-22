@@ -104,7 +104,15 @@ export class ElgEyeTracker {
   }
 
   estimate(video: HTMLVideoElement, landmarks: NormalizedLandmark[], force=false): Promise<ElgEyeFeatures | null> {
-    if (!this.session || video.videoWidth === 0 || landmarks.length < 478) return Promise.resolve(null);
+    return this.estimateSource(video, video.videoWidth, video.videoHeight, landmarks, force);
+  }
+
+  estimateFrame(frame: VideoFrame, landmarks: NormalizedLandmark[], force=false): Promise<ElgEyeFeatures | null> {
+    return this.estimateSource(frame, frame.displayWidth, frame.displayHeight, landmarks, force);
+  }
+
+  private estimateSource(source: CanvasImageSource, sourceWidth:number, sourceHeight:number, landmarks: NormalizedLandmark[], force=false): Promise<ElgEyeFeatures | null> {
+    if (!this.session || sourceWidth === 0 || landmarks.length < 478) return Promise.resolve(null);
     // A/B diagnostic: reproduce the pre-#61 behavior by refusing to crop a new
     // eye image while ONNX inference is already active. The queued mode is the
     // current #61+ architecture.
@@ -115,8 +123,8 @@ export class ElgEyeTracker {
     // Capture the tiny normalized eye inputs immediately while this video frame
     // and its MediaPipe landmarks are current. ONNX inference can then lag
     // behind without changing which image the gaze estimate belongs to.
-    const left = this.cropEye(video, landmarks, LEFT_EYE);
-    const right = this.cropEye(video, landmarks, RIGHT_EYE);
+    const left = this.cropEye(source, sourceWidth, sourceHeight, landmarks, LEFT_EYE);
+    const right = this.cropEye(source, sourceWidth, sourceHeight, landmarks, RIGHT_EYE);
     if (!left || !right) return Promise.resolve(null);
     const input = new Float32Array(2 * H * W);
     input.set(left, 0); input.set(right, H * W);
@@ -153,9 +161,9 @@ export class ElgEyeTracker {
     }
   }
 
-  private cropEye(video: HTMLVideoElement, landmarks: NormalizedLandmark[], eye:{inner:number;outer:number}): Float32Array | null {
+  private cropEye(source: CanvasImageSource, sourceWidth:number, sourceHeight:number, landmarks: NormalizedLandmark[], eye:{inner:number;outer:number}): Float32Array | null {
     const a=landmarks[eye.inner], b=landmarks[eye.outer];
-    const ax=a.x*video.videoWidth, ay=a.y*video.videoHeight, bx=b.x*video.videoWidth, by=b.y*video.videoHeight;
+    const ax=a.x*sourceWidth, ay=a.y*sourceHeight, bx=b.x*sourceWidth, by=b.y*sourceHeight;
     const cx=(ax+bx)/2, cy=(ay+by)/2;
     const cornerDistance=Math.hypot(ax-bx,ay-by);
     if(cornerDistance<12)return null;
@@ -170,7 +178,7 @@ export class ElgEyeTracker {
     ctx.scale(W/cropW,H/cropH);
     ctx.rotate(-angle);
     ctx.translate(-cx,-cy);
-    ctx.drawImage(video,0,0);
+    ctx.drawImage(source,0,0);
     ctx.restore();
     const rgba=ctx.getImageData(0,0,W,H).data, gray=new Uint8Array(W*H),hist=new Uint32Array(256);
     for(let i=0;i<gray.length;i++){const g=Math.round(.299*rgba[i*4]+.587*rgba[i*4+1]+.114*rgba[i*4+2]);gray[i]=g;hist[g]++;}
