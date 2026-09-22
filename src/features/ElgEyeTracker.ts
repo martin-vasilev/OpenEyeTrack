@@ -44,9 +44,10 @@ export class ElgEyeTracker {
     if (this.session) return;
     const timeout = <T>(p:Promise<T>) => Promise.race([p,new Promise<never>((_,reject)=>window.setTimeout(()=>reject(new Error("ELG model loading timed out after 30 seconds.")),30000))]);
     // Use the standard WASM build, not the WebGPU bundle with a WASM provider.
-    // The latter still performs WebGPU-oriented graph handling and rejects this
-    // legacy GazeML graph during shape inference.
-    this.session=await timeout(ort.InferenceSession.create(MODEL_URL,{executionProviders:["wasm"],graphOptimizationLevel:"all"}));
+    // Disable graph rewrites for this legacy converted TensorFlow graph. ORT's
+    // optimization pass can infer incompatible dimensions in the ELG graph
+    // before inference begins; the model previously ran without these rewrites.
+    this.session=await timeout(ort.InferenceSession.create(MODEL_URL,{executionProviders:["wasm"],graphOptimizationLevel:"disabled"}));
     this.backend="wasm"; console.info("[OpenEyeTrack ELG] Using WASM backend (WebGPU disabled for incompatible ELG graph)");
   }
 
