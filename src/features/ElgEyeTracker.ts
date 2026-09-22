@@ -52,11 +52,19 @@ export class ElgEyeTracker {
       const feeds: Record<string, ort.Tensor> = {};
       feeds[this.session.inputNames[0]] = new ort.Tensor("float32", input, [2, H, W, 1]);
       const outputs = await this.session.run(feeds);
-      const tensor = outputs[this.session.outputNames[0]];
-      const data = tensor.data as Float32Array;
-      const dims = tensor.dims.map(Number);
-      const l = decodeIris(data, dims, 0), r = decodeIris(data, dims, 1);
-      if (!l || !r) return null;
+      const candidates = this.session.outputNames
+        .map(name => ({ name, tensor: outputs[name] }))
+        .filter((v): v is {name:string;tensor:ort.Tensor} => Boolean(v.tensor));
+      console.info("[OpenEyeTrack ELG] ONNX outputs", candidates.map(({name,tensor}) => ({name,dims:tensor.dims.map(Number),type:tensor.type})));
+      let decoded: {l:{x:number;y:number;confidence:number};r:{x:number;y:number;confidence:number}} | null = null;
+      for (const {tensor} of candidates) {
+        if (!(tensor.data instanceof Float32Array)) continue;
+        const dims=tensor.dims.map(Number);
+        const l=decodeIris(tensor.data,dims,0), r=decodeIris(tensor.data,dims,1);
+        if(l&&r){decoded={l,r};break;}
+      }
+      if(!decoded)throw new Error(`ELG model ran, but no output matched an 18-channel 60×36 heatmap. Outputs: ${candidates.map(({name,tensor})=>`${name} [${tensor.dims.join("×")}]`).join(", ")}`);
+      const {l,r}=decoded;
       return {
         leftRelX:l.x, leftRelY:l.y, rightRelX:r.x, rightRelY:r.y,
         leftConfidence:l.confidence, rightConfidence:r.confidence,
