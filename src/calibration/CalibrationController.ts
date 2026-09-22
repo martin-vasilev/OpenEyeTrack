@@ -23,7 +23,7 @@ export class CalibrationController {
     const key=modelKey(this.config.model);if(key!==this.accumulatedModelKey){this.accumulatedObservations=[];this.accumulatedModelKey=key;}
     const adaptive=this.config.adaptiveTargets?this.memory.adaptivePoints(this.config.model.type,this.config.points):null;this.activePoints=adaptive??POINT_SETS[this.config.points];
     const newObservations:CalibrationObservation[]=[];const calibrationFeatureSamples:EyeHeadFeatures[]=[];let samplesCollected=0;const sequence=this.calibrationSequence();this.target.hidden=false;
-    try{for(const[nx,ny]of sequence){this.place(nx,ny);await wait(this.config.settleMs);const samples=await collectFeatureSamples(getFeatures,this.config.sampleMs,this.config.featureModel==="elg");for(const copy of samples){calibrationFeatureSamples.push(copy);samplesCollected++;}if(samples.length)newObservations.push({targetX:nx*innerWidth,targetY:ny*innerHeight,features:medianFeatures(samples)});}}finally{this.target.hidden=true;}
+    try{for(const[nx,ny]of sequence){this.place(nx,ny);await wait(this.config.settleMs);const samples=await collectFeatureSamples(getFeatures,this.config.sampleMs,this.config.featureModel==="elg");for(const copy of samples){calibrationFeatureSamples.push(copy);samplesCollected++;}if(samples.length){const stable=selectStableCalibrationSamples(samples);for(const features of stable)newObservations.push({targetX:nx*innerWidth,targetY:ny*innerHeight,features});}}}finally{this.target.hidden=true;}
     const retainPrevious=this.config.adaptiveTargets&&this.accumulatedObservations.length>0;const retained=retainPrevious?this.accumulatedObservations:[];const combined=[...retained,...newObservations];const candidate=createGazeEstimator(this.config.model);await candidate.fit(combined);this.model=candidate;this.accumulatedObservations=combined;
     this.lastSummary={id:`cal-${Date.now()}`,config:cloneConfig(this.config),observations:combined.length,newObservations:newObservations.length,retainedObservations:retained.length,targetsCompleted:sequence.length,samplesCollected,adaptiveUsed:adaptive!==null,headPoseReference:buildHeadPoseReference(calibrationFeatureSamples)};return this.lastSummary;
   }
@@ -35,6 +35,29 @@ export class CalibrationController {
 function modelKey(c:GazeModelConfig){return JSON.stringify(c);}
 function cloneConfig(c:CalibrationConfig):CalibrationConfig{return{...c,target:{...c.target},model:{...c.model}};}
 function medianFeatures(samples:EyeHeadFeatures[]):EyeHeadFeatures{const out={}as EyeHeadFeatures;for(const key of FEATURE_KEYS){const vals=samples.map(s=>s[key]).filter((v):v is number=>typeof v==="number"&&Number.isFinite(v));(out as unknown as Record<string,number|null>)[key]=vals.length?median(vals):null;}return out;}
+function selectStableCalibrationSamples(samples:EyeHeadFeatures[]):EyeHeadFeatures[]{
+  if(samples.length<=3)return samples.length?[medianFeatures(samples)]:[];
+  const scored=samples.map((s,i)=>{
+    const reliability=s.elgBinocularReliability??1;
+    const rawJump=i===0?0:elgRawDistance(samples[i-1],s);
+    return{s,reliability,rawJump};
+  });
+  const jumps=scored.slice(1).map(x=>x.rawJump).sort((a,b)=>a-b);
+  const jumpCut=jumps.length?Math.max(.012,quantile(jumps,.70)*1.5):Infinity;
+  let stable=scored.filter(x=>x.reliability>=.45&&x.rawJump<=jumpCut).map(x=>x.s);
+  if(stable.length<Math.min(5,samples.length))stable=[...samples];
+  // Retain several independent observations per target rather than collapsing
+  // the entire fixation to one median. Temporal bins reduce autocorrelation.
+  const n=Math.min(6,stable.length),out:EyeHeadFeatures[]=[];
+  for(let k=0;k<n;k++){const a=Math.floor(k*stable.length/n),b=Math.max(a+1,Math.floor((k+1)*stable.length/n));out.push(medianFeatures(stable.slice(a,b)));}
+  return out;
+}
+function elgRawDistance(a:EyeHeadFeatures,b:EyeHeadFeatures){
+  const av=[a.elgLeftRelXRaw,a.elgLeftRelYRaw,a.elgRightRelXRaw,a.elgRightRelYRaw],bv=[b.elgLeftRelXRaw,b.elgLeftRelYRaw,b.elgRightRelXRaw,b.elgRightRelYRaw];
+  if(av.some(v=>v===null)||bv.some(v=>v===null))return 0;
+  return Math.sqrt(av.reduce((sum,v,i)=>sum+((v as number)-(bv[i] as number))**2,0)/4);
+}
+function quantile(v:number[],q:number){if(!v.length)return 0;const s=[...v].sort((a,b)=>a-b),p=(s.length-1)*q,l=Math.floor(p),h=Math.ceil(p);return s[l]+(s[h]-s[l])*(p-l);}
 function rmsS2S(p:GazePrediction[]){if(p.length<2)return 0;return Math.sqrt(mean(p.slice(1).map((q,i)=>(q.x-p[i].x)**2+(q.y-p[i].y)**2)));}function spatialSd(p:GazePrediction[]){const mx=mean(p.map(q=>q.x)),my=mean(p.map(q=>q.y));return Math.sqrt(mean(p.map(q=>(q.x-mx)**2+(q.y-my)**2)));}function mean(v:number[]){return v.reduce((a,b)=>a+b,0)/v.length;}function wait(ms:number){return new Promise<void>(r=>setTimeout(r,ms));}function median(v:number[]){const s=[...v].sort((a,b)=>a-b),m=Math.floor(s.length/2);return s.length%2?s[m]:(s[m-1]+s[m])/2;}function shuffle<T>(v:T[]){for(let i=v.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[v[i],v[j]]=[v[j],v[i]];}}
 
 
