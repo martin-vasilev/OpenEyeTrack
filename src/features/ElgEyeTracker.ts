@@ -42,8 +42,11 @@ export class ElgEyeTracker {
   private processing = false;
   private drainWaiters: Array<()=>void> = [];
   private backend: "webgpu" | "wasm" = "wasm";
+  private acquisitionMode: "queued" | "skip-while-busy" = "queued";
 
   get activeBackend(): "webgpu" | "wasm" { return this.backend; }
+  get activeAcquisitionMode(): "queued" | "skip-while-busy" { return this.acquisitionMode; }
+  setAcquisitionMode(mode:"queued"|"skip-while-busy"):void { this.acquisitionMode=mode; }
 
   reset(): void { this.history = []; this.filtered = null; }
 
@@ -93,6 +96,10 @@ export class ElgEyeTracker {
 
   estimate(video: HTMLVideoElement, landmarks: NormalizedLandmark[], force=false): Promise<ElgEyeFeatures | null> {
     if (!this.session || video.videoWidth === 0 || landmarks.length < 478) return Promise.resolve(null);
+    // A/B diagnostic: reproduce the pre-#61 behavior by refusing to crop a new
+    // eye image while ONNX inference is already active. The queued mode is the
+    // current #61+ architecture.
+    if (this.acquisitionMode==="skip-while-busy" && this.processing) return Promise.resolve(null);
     const now = performance.now();
     if (!force && now - this.lastRun < this.minIntervalMs) return Promise.resolve(null);
     this.lastRun = now;
