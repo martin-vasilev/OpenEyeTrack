@@ -25,6 +25,15 @@ export class ElgEyeTracker {
   private busy = false;
   private lastRun = 0;
   private readonly minIntervalMs = 33;
+  private history: ElgEyeFeatures[] = [];
+
+  reset(): void { this.history = []; }
+
+  private stabilize(v: ElgEyeFeatures): ElgEyeFeatures {
+    this.history.push(v); if(this.history.length>5)this.history.shift();
+    const recent=this.history.slice(-3), med=(key:keyof ElgEyeFeatures)=>{const a=recent.map(x=>x[key] as number).sort((a,b)=>a-b);return a[Math.floor(a.length/2)];};
+    return {...v,leftRelX:med("leftRelX"),leftRelY:med("leftRelY"),rightRelX:med("rightRelX"),rightRelY:med("rightRelY")};
+  }
 
   async initialize(): Promise<void> {
     if (this.session) return;
@@ -65,11 +74,11 @@ export class ElgEyeTracker {
       }
       if(!decoded)throw new Error(`ELG model ran, but no output matched an 18-channel 60×36 heatmap. Outputs: ${candidates.map(({name,tensor})=>`${name} [${tensor.dims.join("×")}]`).join(", ")}`);
       const {l,r}=decoded;
-      return {
+      return this.stabilize({
         leftRelX:l.x, leftRelY:l.y, rightRelX:r.x, rightRelY:r.y,
         leftConfidence:l.confidence, rightConfidence:r.confidence,
         inferenceMs:performance.now()-started, timestampMs:performance.now()
-      };
+      });
     } finally { this.busy = false; }
   }
 
