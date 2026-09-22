@@ -1,7 +1,11 @@
 import * as ort from "onnxruntime-web/webgpu";
 import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
 
-ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/";
+// Keep ORT's auxiliary WASM/worker modules on the same version and origin as the
+// installed runtime. The WebGPU build can still request these modules during
+// backend initialization, so an incomplete CDN dist breaks both WebGPU and the
+// subsequent WASM fallback.
+ort.env.wasm.wasmPaths = "/OpenEyeTrack/ort/";
 
 export interface ElgEyeFeatures {
   leftRelX: number;

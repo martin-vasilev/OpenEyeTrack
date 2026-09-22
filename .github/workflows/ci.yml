@@ -30,5 +30,11 @@ jobs:
           curl -L --fail --retry 3 -o public/models/mobileone_s0_gaze.onnx https://github.com/yakhyo/gaze-estimation/releases/download/weights/mobileone_s0_gaze.onnx
           curl -L --fail --retry 3 -o public/models/resnet34_gaze.onnx https://github.com/yakhyo/gaze-estimation/releases/download/weights/resnet34_gaze.onnx
 
+      - name: Copy ONNX Runtime browser assets
+        run: |
+          mkdir -p public/ort
+          cp node_modules/onnxruntime-web/dist/ort-wasm*.wasm public/ort/
+          cp node_modules/onnxruntime-web/dist/ort-wasm*.mjs public/ort/
+
       - name: Build
         run: npm run build
