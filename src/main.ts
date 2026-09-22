@@ -179,7 +179,57 @@ function beginRecording(){headGuard.setConfig(readHeadGuardConfig());headGuard.s
 async function finishRecording(event:string){tracker.mark(event);recording=false;recordButton.textContent="Processing eye data…";await elgTracker.drain();lastRecording=tracker.stopRecording();recordButton.textContent="Start recording";exportButton.disabled=!lastRecording.length;headGuard.reset();}
 function interruptForHeadMovement(reason:string){if(!recording)return;finishRecording("head_movement_interrupt");headWarningText.textContent=`Recording stopped because ${reason}.`;headWarning.hidden=false;status.textContent=`Recording interrupted: ${reason}. ${lastRecording.length} samples retained and available for export.`;}
 
-function runLandmarks(){elgTracker.setAcquisitionMode((elgAcquisitionModeInput?.value??"queued")as "queued"|"skip-while-busy");overlay.resizeTo(video);const result=faceTracker.detect(video,performance.now());if(result){detectedFaces=result.faceLandmarks.length;const face=result.faceLandmarks[0];if(face){latestFace=face;const selected=(featureModelInput?.value??"elg")as EyeFeatureModel;if(selected==="elg"){void elgTracker.estimate(video,face).then(v=>{if(v)latestElg=v;});}else{void appearanceTracker.estimate(video,face).then(v=>{if(v)latestAppearance=v;});}const matrix=result.facialTransformationMatrixes?.[0]?.data;latestFeatures=extractEyeHeadFeatures(face,matrix?Array.from(matrix):undefined);if(latestFeatures&&selected==="elg"&&latestElg){latestFeatures.elgLeftRelX=latestElg.leftRelX;latestFeatures.elgLeftRelY=latestElg.leftRelY;latestFeatures.elgRightRelX=latestElg.rightRelX;latestFeatures.elgRightRelY=latestElg.rightRelY;latestFeatures.elgConfidence=(latestElg.leftConfidence+latestElg.rightConfidence)/2;latestFeatures.elgLeftConfidence=latestElg.leftConfidence;latestFeatures.elgRightConfidence=latestElg.rightConfidence;latestFeatures.elgInferenceMs=latestElg.inferenceMs;latestFeatures.elgTimestampMs=latestElg.timestampMs;latestFeatures.elgAgeMs=Math.max(0,performance.now()-latestElg.acquisitionTimestampMs);latestFeatures.elgSequenceId=latestElg.sequenceId;latestFeatures.elgAcquisitionTimestampMs=latestElg.acquisitionTimestampMs;latestFeatures.elgProcessedTimestampMs=latestElg.processedTimestampMs;latestFeatures.elgLatencyMs=latestElg.latencyMs;latestFeatures.elgQueueDepth=elgTracker.queueDepth;latestFeatures.elgLeftRelXRaw=latestElg.leftRelXRaw;latestFeatures.elgLeftRelYRaw=latestElg.leftRelYRaw;latestFeatures.elgRightRelXRaw=latestElg.rightRelXRaw;latestFeatures.elgRightRelYRaw=latestElg.rightRelYRaw;latestFeatures.elgBinocularReliability=latestElg.binocularReliability;}else if(latestFeatures&&selected!=="mediapipe"&&latestAppearance){latestFeatures.appearanceGazeYaw=latestAppearance.yaw;latestFeatures.appearanceGazePitch=latestAppearance.pitch;}tracker.setFeatures(latestFeatures);if(recording&&latestFeatures){const violation=headGuard.check(latestFeatures);if(violation)interruptForHeadMovement(violation.reason);}const raw=latestFeatures?calibration.model.predict(latestFeatures):null,filterResult=raw?gazeFilter.filter(raw):null,filtered=filterResult?.gaze??null;tracker.setGaze(raw,filtered,filterResult?.outlier??null,filterResult?.rawDeviationPx??null);if(filtered&&!calibrationActive&&calibrationSetup.hidden&&headWarning.hidden){gazeDot.hidden=false;gazeDot.style.left=`${filtered.x}px`;gazeDot.style.top=`${filtered.y}px`;}else gazeDot.hidden=true;overlay.draw(face,latestFeatures,showValues.checked);}else{latestFeatures=null;tracker.setFeatures(null);tracker.setGaze(null);gazeFilter.reset();gazeDot.hidden=true;overlay.clear();}}detectionAnimation=requestAnimationFrame(runLandmarks);}
+function runLandmarks(){
+  const pipelineStarted=performance.now();
+  const selected=(featureModelInput?.value??"elg")as EyeFeatureModel;
+  const acquisitionMode=(elgAcquisitionModeInput?.value??"queued")as "queued"|"skip-while-busy";
+  elgTracker.setAcquisitionMode(acquisitionMode);
+  overlay.resizeTo(video);
+
+  const detectStarted=performance.now();
+  const result=faceTracker.detect(video,detectStarted);
+  const mediaPipeDetectMs=performance.now()-detectStarted;
+  let elgEnqueueMs:number|null=null,featureExtractionMs:number|null=null,gazePredictionMs:number|null=null,overlayRenderMs:number|null=null;
+
+  if(result){
+    detectedFaces=result.faceLandmarks.length;
+    const face=result.faceLandmarks[0];
+    if(face){
+      latestFace=face;
+      if(selected==="elg"){
+        const t=performance.now();
+        void elgTracker.estimate(video,face).then(v=>{if(v)latestElg=v;});
+        elgEnqueueMs=performance.now()-t;
+      }else{
+        void appearanceTracker.estimate(video,face).then(v=>{if(v)latestAppearance=v;});
+      }
+      const matrix=result.facialTransformationMatrixes?.[0]?.data;
+      const featureStarted=performance.now();
+      latestFeatures=extractEyeHeadFeatures(face,matrix?Array.from(matrix):undefined);
+      featureExtractionMs=performance.now()-featureStarted;
+      if(latestFeatures&&selected==="elg"&&latestElg){
+        latestFeatures.elgLeftRelX=latestElg.leftRelX;latestFeatures.elgLeftRelY=latestElg.leftRelY;latestFeatures.elgRightRelX=latestElg.rightRelX;latestFeatures.elgRightRelY=latestElg.rightRelY;latestFeatures.elgConfidence=(latestElg.leftConfidence+latestElg.rightConfidence)/2;latestFeatures.elgLeftConfidence=latestElg.leftConfidence;latestFeatures.elgRightConfidence=latestElg.rightConfidence;latestFeatures.elgInferenceMs=latestElg.inferenceMs;latestFeatures.elgTimestampMs=latestElg.timestampMs;latestFeatures.elgAgeMs=Math.max(0,performance.now()-latestElg.acquisitionTimestampMs);latestFeatures.elgSequenceId=latestElg.sequenceId;latestFeatures.elgAcquisitionTimestampMs=latestElg.acquisitionTimestampMs;latestFeatures.elgProcessedTimestampMs=latestElg.processedTimestampMs;latestFeatures.elgLatencyMs=latestElg.latencyMs;latestFeatures.elgQueueDepth=elgTracker.queueDepth;latestFeatures.elgLeftRelXRaw=latestElg.leftRelXRaw;latestFeatures.elgLeftRelYRaw=latestElg.leftRelYRaw;latestFeatures.elgRightRelXRaw=latestElg.rightRelXRaw;latestFeatures.elgRightRelYRaw=latestElg.rightRelYRaw;latestFeatures.elgBinocularReliability=latestElg.binocularReliability;
+      }else if(latestFeatures&&selected!=="mediapipe"&&latestAppearance){
+        latestFeatures.appearanceGazeYaw=latestAppearance.yaw;latestFeatures.appearanceGazePitch=latestAppearance.pitch;
+      }
+      tracker.setFeatures(latestFeatures);
+      if(recording&&latestFeatures){const violation=headGuard.check(latestFeatures);if(violation)interruptForHeadMovement(violation.reason);}
+      const gazeStarted=performance.now();
+      const raw=latestFeatures?calibration.model.predict(latestFeatures):null,filterResult=raw?gazeFilter.filter(raw):null,filtered=filterResult?.gaze??null;
+      gazePredictionMs=performance.now()-gazeStarted;
+      tracker.setGaze(raw,filtered,filterResult?.outlier??null,filterResult?.rawDeviationPx??null);
+      if(filtered&&!calibrationActive&&calibrationSetup.hidden&&headWarning.hidden){gazeDot.hidden=false;gazeDot.style.left=`${filtered.x}px`;gazeDot.style.top=`${filtered.y}px`;}else gazeDot.hidden=true;
+      const overlayStarted=performance.now();
+      overlay.draw(face,latestFeatures,showValues.checked);
+      overlayRenderMs=performance.now()-overlayStarted;
+    }else{
+      latestFeatures=null;tracker.setFeatures(null);tracker.setGaze(null);gazeFilter.reset();gazeDot.hidden=true;
+      const overlayStarted=performance.now();overlay.clear();overlayRenderMs=performance.now()-overlayStarted;
+    }
+  }
+  tracker.setPipelineDiagnostics({totalMs:performance.now()-pipelineStarted,mediaPipeDetectMs,elgEnqueueMs,featureExtractionMs,gazePredictionMs,overlayRenderMs,elgAcquisitionMode:acquisitionMode});
+  detectionAnimation=requestAnimationFrame(runLandmarks);
+}
 function navigationLog(message:string){console.info("[OpenEyeTrack navigation]",message);status.textContent=message;}
 function runCalibrationNavigation(label:string,action:()=>void){console.info("[OpenEyeTrack navigation]",label);try{action();console.info("[OpenEyeTrack navigation]",label,"complete");}catch(e){const message=e instanceof Error?e.message:String(e);console.error("[OpenEyeTrack navigation]",label,"failed",e);status.textContent=`Navigation error (${label}): ${message}`;}}
 function openHeadPosition(){navigationLog("Opening head-position screen…");headPositionReadySince=null;headPositionLatched=false;headPositionScreen.hidden=false;gazeDot.hidden=true;setStep("calibration");if(video.srcObject){headPositionVideo.srcObject=video.srcObject;void headPositionVideo.play().catch(e=>console.warn("[OpenEyeTrack navigation] Head-position preview could not autoplay",e));}updateCameraChecks();console.info("[OpenEyeTrack navigation] headPositionScreen.hidden =",headPositionScreen.hidden);}
