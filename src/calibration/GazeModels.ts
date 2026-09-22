@@ -4,6 +4,7 @@ import type { GazeEstimator } from "../gaze/GazeEstimator";
 
 export type GazeModelType = "linear" | "polynomial" | "rbf" | "knn";
 export interface GazeModelConfig { type: GazeModelType; ridge: number; rbfGamma: number; knnK: number; }
+export interface SerializedGazeModel {version:1;type:GazeModelType;state:unknown;}
 
 function baseVector(f: EyeHeadFeatures): number[] {
   if (f.elgLeftRelX !== null && f.elgLeftRelY !== null && f.elgRightRelX !== null && f.elgRightRelY !== null) {
@@ -35,6 +36,8 @@ class FeatureRidgeEstimator implements GazeEstimator {
   private expand(r:number[]){if(!this.quadratic)return[1,...r];const [x=0,y=0,dx=0,dy=0]=r;return[1,x,y,dx,dy,x*x,y*y,x*y,x*dx,y*dy];}
   predict(f:EyeHeadFeatures){if(!this.bx||!this.by)return null;const x=this.expand(applyStandardize(baseVector(f),this.mean,this.sd));return{x:dot(this.bx,x),y:dot(this.by,x),confidence:1,support:1,extrapolating:false};}
   get calibrated(){return this.bx!==null;}
+  serialize(){return{quadratic:this.quadratic,lambda:this.lambda,bx:this.bx,by:this.by,mean:this.mean,sd:this.sd};}
+  restore(s:any){if(!s||!Array.isArray(s.bx)||!Array.isArray(s.by)||!Array.isArray(s.mean)||!Array.isArray(s.sd))throw new Error("Invalid saved ridge model.");this.bx=s.bx;this.by=s.by;this.mean=s.mean;this.sd=s.sd;}
 }
 
 /** Linear global mapping plus local RBF correction. Weak RBF support fades to the linear baseline instead of (0,0). */
@@ -63,6 +66,8 @@ class KnnEstimator implements GazeEstimator {
   predict(f:EyeHeadFeatures){if(!this.train.length)return null;const z=applyStandardize(baseVector(f),this.mean,this.sd),near=this.train.map(t=>({t,d:Math.sqrt(t.x.reduce((s,v,i)=>s+(v-z[i])**2,0))})).sort((a,b)=>a.d-b.d).slice(0,Math.min(this.k,this.train.length));let sw=0,sx=0,sy=0;for(const n of near){const w=1/(n.d+1e-3);sw+=w;sx+=w*n.t.tx;sy+=w*n.t.ty;}const nearest=near[0]?.d??Infinity,confidence=Math.exp(-nearest);return{x:sx/sw,y:sy/sw,confidence,support:confidence,extrapolating:confidence<.25};}
   get calibrated(){return this.train.length>0;}
 }
+export function serializeGazeEstimator(model:GazeEstimator,c:GazeModelConfig):SerializedGazeModel|null {const x=model as GazeEstimator&{serialize?:()=>unknown};return x.serialize?{version:1,type:c.type,state:x.serialize()}:null;}
+export function restoreGazeEstimator(c:GazeModelConfig,s:SerializedGazeModel):GazeEstimator {if(s.version!==1||s.type!==c.type)throw new Error("Saved calibration is incompatible.");const model=createGazeEstimator(c) as GazeEstimator&{restore?:(x:unknown)=>void};if(!model.restore)throw new Error("This gaze model cannot currently be restored.");model.restore(s.state);return model;}
 export function createGazeEstimator(c:GazeModelConfig):GazeEstimator {
   if(c.type==="linear")return new FeatureRidgeEstimator(false,c.ridge);
   if(c.type==="polynomial")return new FeatureRidgeEstimator(true,c.ridge);

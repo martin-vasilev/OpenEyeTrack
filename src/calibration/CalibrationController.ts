@@ -1,6 +1,6 @@
 import type { EyeHeadFeatures } from "../features/EyeHeadFeatures";
 import type { CalibrationObservation, GazePrediction } from "./LinearGazeModel";
-import { createGazeEstimator, type GazeModelConfig } from "./GazeModels";
+import { createGazeEstimator, serializeGazeEstimator, restoreGazeEstimator, type GazeModelConfig, type SerializedGazeModel } from "./GazeModels";
 import type { GazeEstimator } from "../gaze/GazeEstimator";
 import { CalibrationMemory } from "./CalibrationMemory";
 import { buildHeadPoseReference, type HeadPoseReference } from "../qc/CalibrationHeadPose";
@@ -9,6 +9,7 @@ export type TargetShape = "bullseye" | "circle" | "dot" | "cross";
 export interface CalibrationTargetConfig { sizePx:number; shape:TargetShape; color:string; }
 export interface CalibrationConfig { featureModel:"mediapipe"|"elg"|"mobileone_s0"|"resnet34"; points:CalibrationPointCount; settleMs:number; sampleMs:number; repetitions:number; randomize:boolean; adaptiveTargets:boolean; target:CalibrationTargetConfig; model:GazeModelConfig; }
 export interface CalibrationSummary { id:string; config:CalibrationConfig; observations:number; newObservations:number; retainedObservations:number; targetsCompleted:number; samplesCollected:number; adaptiveUsed:boolean; headPoseReference:HeadPoseReference|null; }
+export interface SavedCalibration {version:1;savedAt:string;screenWidth:number;screenHeight:number;config:CalibrationConfig;model:SerializedGazeModel;summary:CalibrationSummary|null;}
 export interface ValidationPointResult { targetX:number; targetY:number; samplesExpected:number; samplesValid:number; accuracyPx:number; precisionRmsS2SPx:number; precisionSdPx:number; }
 export interface ValidationResult { meanPx:number; medianPx:number; rmsePx:number; precisionRmsS2SPx:number; precisionSdPx:number; dataLoss:number; points:number; pointResults:ValidationPointResult[]; }
 const POINT_SETS:Record<CalibrationPointCount,readonly(readonly[number,number])[]>={5:[[.5,.5],[.12,.12],[.88,.12],[.12,.88],[.88,.88]],9:[[.12,.12],[.5,.12],[.88,.12],[.12,.5],[.5,.5],[.88,.5],[.12,.88],[.5,.88],[.88,.88]],13:[[.12,.12],[.5,.12],[.88,.12],[.12,.5],[.5,.5],[.88,.5],[.12,.88],[.5,.88],[.88,.88],[.31,.31],[.69,.31],[.31,.69],[.69,.69]]};
@@ -19,6 +20,9 @@ export class CalibrationController {
   setConfig(config:CalibrationConfig){const changed=JSON.stringify(config.model)!==JSON.stringify(this.config.model);this.config=cloneConfig(config);if(changed){this.model=createGazeEstimator(this.config.model);this.accumulatedObservations=[];this.accumulatedModelKey=modelKey(this.config.model);}this.applyTargetStyle();}
   get pointCount(){return this.activePoints.length;}get calibrationSummary(){return this.lastSummary;}get hasCalibrationMemory(){return this.memory.has(this.config.model.type);}
   clearCalibrationMemory(){this.memory.clear();this.accumulatedObservations=[];this.lastSummary=null;}
+  exportSavedCalibration():SavedCalibration|null{const model=serializeGazeEstimator(this.model,this.config.model);return model?{version:1,savedAt:new Date().toISOString(),screenWidth:innerWidth,screenHeight:innerHeight,config:cloneConfig(this.config),model,summary:this.lastSummary}:null;}
+  restoreSavedCalibration(saved:SavedCalibration){if(saved.version!==1)throw new Error("Unsupported saved calibration.");const scaleX=innerWidth/saved.screenWidth,scaleY=innerHeight/saved.screenHeight;if(Math.abs(scaleX-1)>.08||Math.abs(scaleY-1)>.08)throw new Error("Saved calibration was made at a substantially different browser size. Please recalibrate.");this.config=cloneConfig(saved.config);this.model=restoreGazeEstimator(this.config.model,saved.model);this.lastSummary=saved.summary;this.accumulatedObservations=[];this.accumulatedModelKey=modelKey(this.config.model);this.applyTargetStyle();}
+
   async calibrate(getFeatures:()=>EyeHeadFeatures|null):Promise<CalibrationSummary>{
     const key=modelKey(this.config.model);if(key!==this.accumulatedModelKey){this.accumulatedObservations=[];this.accumulatedModelKey=key;}
     const adaptive=this.config.adaptiveTargets?this.memory.adaptivePoints(this.config.model.type,this.config.points):null;this.activePoints=adaptive??POINT_SETS[this.config.points];
