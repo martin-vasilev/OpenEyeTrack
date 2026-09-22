@@ -6,6 +6,10 @@ import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
 ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/";
 
 export interface ElgEyeFeatures {
+  sequenceId: number;
+  acquisitionTimestampMs: number;
+  processedTimestampMs: number;
+  latencyMs: number;
   leftRelX: number;
   leftRelY: number;
   rightRelX: number;
@@ -28,11 +32,22 @@ export class ElgEyeTracker {
   private lastRun = 0;
   private readonly minIntervalMs = 33;
   private history: ElgEyeFeatures[] = [];
+  private nextSequenceId = 1;
+  private queue: Array<{sequenceId:number;acquisitionTimestampMs:number;input:Float32Array;resolve:(v:ElgEyeFeatures|null)=>void;reject:(e:unknown)=>void}> = [];
+  private processing = false;
+  private drainWaiters: Array<()=>void> = [];
   private backend: "webgpu" | "wasm" = "wasm";
 
   get activeBackend(): "webgpu" | "wasm" { return this.backend; }
 
   reset(): void { this.history = []; }
+
+  get queueDepth(): number { return this.queue.length + (this.processing ? 1 : 0); }
+
+  async drain(): Promise<void> {
+    if (!this.processing && this.queue.length === 0) return;
+    await new Promise<void>(resolve => this.drainWaiters.push(resolve));
+  }
 
   private stabilize(v: ElgEyeFeatures): ElgEyeFeatures {
     this.history.push(v); if(this.history.length>5)this.history.shift();
@@ -51,41 +66,50 @@ export class ElgEyeTracker {
     this.backend="wasm"; console.info("[OpenEyeTrack ELG] Using restored known-working WASM configuration");
   }
 
-  async estimate(video: HTMLVideoElement, landmarks: NormalizedLandmark[], force=false): Promise<ElgEyeFeatures | null> {
-    if (!this.session || this.busy || video.videoWidth === 0 || landmarks.length < 478) return null;
+  estimate(video: HTMLVideoElement, landmarks: NormalizedLandmark[], force=false): Promise<ElgEyeFeatures | null> {
+    if (!this.session || video.videoWidth === 0 || landmarks.length < 478) return Promise.resolve(null);
     const now = performance.now();
-    if (!force && now - this.lastRun < this.minIntervalMs) return null;
+    if (!force && now - this.lastRun < this.minIntervalMs) return Promise.resolve(null);
     this.lastRun = now;
-    this.busy = true;
-    const started = performance.now();
+    // Capture the tiny normalized eye inputs immediately while this video frame
+    // and its MediaPipe landmarks are current. ONNX inference can then lag
+    // behind without changing which image the gaze estimate belongs to.
+    const left = this.cropEye(video, landmarks, LEFT_EYE);
+    const right = this.cropEye(video, landmarks, RIGHT_EYE);
+    if (!left || !right) return Promise.resolve(null);
+    const input = new Float32Array(2 * H * W);
+    input.set(left, 0); input.set(right, H * W);
+    const sequenceId=this.nextSequenceId++, acquisitionTimestampMs=now;
+    return new Promise<ElgEyeFeatures|null>((resolve,reject)=>{
+      this.queue.push({sequenceId,acquisitionTimestampMs,input,resolve,reject});
+      void this.processQueue();
+    });
+  }
+
+  private async processQueue(): Promise<void> {
+    if (this.processing || !this.session) return;
+    this.processing=true;
     try {
-      const left = this.cropEye(video, landmarks, LEFT_EYE);
-      const right = this.cropEye(video, landmarks, RIGHT_EYE);
-      if (!left || !right) return null;
-      const input = new Float32Array(2 * H * W);
-      input.set(left, 0); input.set(right, H * W);
-      const feeds: Record<string, ort.Tensor> = {};
-      feeds[this.session.inputNames[0]] = new ort.Tensor("float32", input, [2, H, W, 1]);
-      const outputs = await this.session.run(feeds);
-      const candidates = this.session.outputNames
-        .map(name => ({ name, tensor: outputs[name] }))
-        .filter((v): v is {name:string;tensor:ort.Tensor} => Boolean(v.tensor));
-      console.info("[OpenEyeTrack ELG] ONNX outputs", candidates.map(({name,tensor}) => ({name,dims:tensor.dims.map(Number),type:tensor.type})));
-      let decoded: {l:{x:number;y:number;confidence:number};r:{x:number;y:number;confidence:number}} | null = null;
-      for (const {tensor} of candidates) {
-        if (!(tensor.data instanceof Float32Array)) continue;
-        const dims=tensor.dims.map(Number);
-        const l=decodeIris(tensor.data,dims,0), r=decodeIris(tensor.data,dims,1);
-        if(l&&r){decoded={l,r};break;}
+      while(this.queue.length){
+        const job=this.queue.shift()!;
+        const started=performance.now();
+        try{
+          const feeds:Record<string,ort.Tensor>={};
+          feeds[this.session.inputNames[0]]=new ort.Tensor("float32",job.input,[2,H,W,1]);
+          const outputs=await this.session.run(feeds);
+          const candidates=this.session.outputNames.map(name=>({name,tensor:outputs[name]})).filter((v):v is {name:string;tensor:ort.Tensor}=>Boolean(v.tensor));
+          let decoded:{l:{x:number;y:number;confidence:number};r:{x:number;y:number;confidence:number}}|null=null;
+          for(const {tensor} of candidates){if(!(tensor.data instanceof Float32Array))continue;const dims=tensor.dims.map(Number);const l=decodeIris(tensor.data,dims,0),r=decodeIris(tensor.data,dims,1);if(l&&r){decoded={l,r};break;}}
+          if(!decoded)throw new Error(`ELG model ran, but no output matched an 18-channel 60×36 heatmap. Outputs: ${candidates.map(({name,tensor})=>`${name} [${tensor.dims.join("×")}]`).join(", ")}`);
+          const processedTimestampMs=performance.now(),{l,r}=decoded;
+          job.resolve(this.stabilize({sequenceId:job.sequenceId,acquisitionTimestampMs:job.acquisitionTimestampMs,processedTimestampMs,latencyMs:processedTimestampMs-job.acquisitionTimestampMs,leftRelX:l.x,leftRelY:l.y,rightRelX:r.x,rightRelY:r.y,leftConfidence:l.confidence,rightConfidence:r.confidence,inferenceMs:processedTimestampMs-started,timestampMs:job.acquisitionTimestampMs}));
+        }catch(e){job.reject(e);}
       }
-      if(!decoded)throw new Error(`ELG model ran, but no output matched an 18-channel 60×36 heatmap. Outputs: ${candidates.map(({name,tensor})=>`${name} [${tensor.dims.join("×")}]`).join(", ")}`);
-      const {l,r}=decoded;
-      return this.stabilize({
-        leftRelX:l.x, leftRelY:l.y, rightRelX:r.x, rightRelY:r.y,
-        leftConfidence:l.confidence, rightConfidence:r.confidence,
-        inferenceMs:performance.now()-started, timestampMs:performance.now()
-      });
-    } finally { this.busy = false; }
+    }finally{
+      this.processing=false;
+      if(this.queue.length===0){const waiters=this.drainWaiters.splice(0);for(const resolve of waiters)resolve();}
+      else void this.processQueue();
+    }
   }
 
   private cropEye(video: HTMLVideoElement, landmarks: NormalizedLandmark[], eye:{inner:number;outer:number}): Float32Array | null {
