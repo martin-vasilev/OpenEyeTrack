@@ -1,6 +1,17 @@
 export interface EyeTrackingSample {
   timestamp: number;
   frameId: number;
+  cameraTrackFps: number | null;
+  videoCallbackIntervalMs: number | null;
+  videoPresentedFrameDelta: number | null;
+  videoMissedPresentedFramesTotal: number;
+  pipelineTotalMs: number | null;
+  mediaPipeDetectMs: number | null;
+  elgEnqueueMs: number | null;
+  featureExtractionMs: number | null;
+  gazePredictionMs: number | null;
+  overlayRenderMs: number | null;
+  elgAcquisitionMode: string | null;
   gazeXRaw: number | null;
   gazeYRaw: number | null;
   gazeX: number | null;
