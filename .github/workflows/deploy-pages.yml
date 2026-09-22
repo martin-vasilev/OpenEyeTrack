@@ -35,9 +35,10 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Download MobileGaze models
+      - name: Download gaze models
         run: |
           mkdir -p public/models
+          curl -L --fail --retry 3 -o public/models/gazeml_elg_i60x36_n32.onnx https://storage.googleapis.com/ailia-models/gazeml/gazeml_elg_i60x36_n32.onnx
           curl -L --fail --retry 3 -o public/models/mobileone_s0_gaze.onnx https://github.com/yakhyo/gaze-estimation/releases/download/weights/mobileone_s0_gaze.onnx
           curl -L --fail --retry 3 -o public/models/resnet34_gaze.onnx https://github.com/yakhyo/gaze-estimation/releases/download/weights/resnet34_gaze.onnx
 
