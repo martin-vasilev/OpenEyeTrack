@@ -42,12 +42,21 @@ export class AppearanceGazeTracker {
   }
 
   async estimate(video: HTMLVideoElement, landmarks: NormalizedLandmark[], force=false): Promise<AppearanceGazeFeatures | null> {
-    if (this.model === "mediapipe" || this.model === "elg" || !this.session || this.busy || sourceWidth === 0) return null;
+    return this.estimateSource(video, video.videoWidth, video.videoHeight, landmarks, force);
+  }
+
+  estimateFrame(frame: VideoFrame, landmarks: NormalizedLandmark[], force=false): Promise<AppearanceGazeFeatures | null> {
+    return this.estimateSource(frame, frame.displayWidth, frame.displayHeight, landmarks, force);
+  }
+
+  private async estimateSource(source: CanvasImageSource, sourceWidth: number, sourceHeight: number, landmarks: NormalizedLandmark[], force=false): Promise<AppearanceGazeFeatures | null> {
+    if (this.model === "mediapipe" || this.model === "elg" || !this.session || this.busy || sourceWidth === 0 || sourceHeight === 0) return null;
     const now = performance.now();
     if (!force && now - this.lastRun < this.minIntervalMs) return null;
-    this.lastRun = now; this.busy = true;
+    this.lastRun = now;
+    this.busy = true;
     try {
-      const input = this.preprocess(video, landmarks);
+      const input = this.preprocess(source, sourceWidth, sourceHeight, landmarks);
       if (!input) return null;
       const feeds: Record<string, ort.Tensor> = {};
       feeds[this.session.inputNames[0]] = new ort.Tensor("float32", input, [1,3,448,448]);
@@ -55,7 +64,9 @@ export class AppearanceGazeTracker {
       const yawLogits = outputs[this.session.outputNames[0]].data as Float32Array;
       const pitchLogits = outputs[this.session.outputNames[1]].data as Float32Array;
       return { yaw: decodeAngle(yawLogits), pitch: decodeAngle(pitchLogits), model: this.model };
-    } finally { this.busy = false; }
+    } finally {
+      this.busy = false;
+    }
   }
 
   private preprocess(source:CanvasImageSource,sourceWidth:number,sourceHeight:number, landmarks: NormalizedLandmark[]): Float32Array | null {
