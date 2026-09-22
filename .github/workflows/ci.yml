@@ -23,5 +23,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Download MobileGaze models
+        run: |
+          mkdir -p public/models
+          curl -L --fail --retry 3 -o public/models/mobileone_s0_gaze.onnx https://github.com/yakhyo/gaze-estimation/releases/download/weights/mobileone_s0_gaze.onnx
+          curl -L --fail --retry 3 -o public/models/resnet34_gaze.onnx https://github.com/yakhyo/gaze-estimation/releases/download/weights/resnet34_gaze.onnx
+
       - name: Build
         run: npm run build

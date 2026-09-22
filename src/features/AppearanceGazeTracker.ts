@@ -13,9 +13,10 @@ export interface AppearanceGazeFeatures {
   model: EyeFeatureModel;
 }
 
+const BASE_URL = "/OpenEyeTrack/";
 const MODEL_URLS: Record<Exclude<EyeFeatureModel, "mediapipe">, string> = {
-  mobileone_s0: "https://github.com/yakhyo/gaze-estimation/releases/download/weights/mobileone_s0_gaze.onnx",
-  resnet34: "https://github.com/yakhyo/gaze-estimation/releases/download/weights/resnet34_gaze.onnx"
+  mobileone_s0: `${BASE_URL}models/mobileone_s0_gaze.onnx`,
+  resnet34: `${BASE_URL}models/resnet34_gaze.onnx`
 };
 
 export class AppearanceGazeTracker {
