@@ -6,6 +6,10 @@ export type GazeModelType = "linear" | "polynomial" | "rbf" | "knn";
 export interface GazeModelConfig { type: GazeModelType; ridge: number; rbfGamma: number; knnK: number; }
 
 function baseVector(f: EyeHeadFeatures): number[] {
+  if (f.elgLeftRelX !== null && f.elgLeftRelY !== null && f.elgRightRelX !== null && f.elgRightRelY !== null) {
+    const x=(f.elgLeftRelX+f.elgRightRelX)/2, y=(f.elgLeftRelY+f.elgRightRelY)/2;
+    return [x,y,f.elgLeftRelX-f.elgRightRelX,f.elgLeftRelY-f.elgRightRelY];
+  }
   if (f.appearanceGazeYaw !== null && f.appearanceGazePitch !== null) return [f.appearanceGazeYaw, f.appearanceGazePitch];
   const relX=(f.leftRelX+f.rightRelX)/2, relY=(f.leftRelY+f.rightRelY)/2;
   return [relX,relY,f.leftRelX-f.rightRelX,f.leftRelY-f.rightRelY];
