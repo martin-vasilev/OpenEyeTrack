@@ -42,21 +42,12 @@ export class AppearanceGazeTracker {
   }
 
   async estimate(video: HTMLVideoElement, landmarks: NormalizedLandmark[], force=false): Promise<AppearanceGazeFeatures | null> {
-    return this.estimateSource(video, video.videoWidth, video.videoHeight, landmarks, force);
-  }
-
-  estimateFrame(frame: VideoFrame, landmarks: NormalizedLandmark[], force=false): Promise<AppearanceGazeFeatures | null> {
-    return this.estimateSource(frame, frame.displayWidth, frame.displayHeight, landmarks, force);
-  }
-
-  private async estimateSource(source: CanvasImageSource, sourceWidth: number, sourceHeight: number, landmarks: NormalizedLandmark[], force=false): Promise<AppearanceGazeFeatures | null> {
-    if (this.model === "mediapipe" || this.model === "elg" || !this.session || this.busy || sourceWidth === 0 || sourceHeight === 0) return null;
+    if (this.model === "mediapipe" || this.model === "elg" || !this.session || this.busy || video.videoWidth === 0) return null;
     const now = performance.now();
     if (!force && now - this.lastRun < this.minIntervalMs) return null;
-    this.lastRun = now;
-    this.busy = true;
+    this.lastRun = now; this.busy = true;
     try {
-      const input = this.preprocess(source, sourceWidth, sourceHeight, landmarks);
+      const input = this.preprocess(video, landmarks);
       if (!input) return null;
       const feeds: Record<string, ort.Tensor> = {};
       feeds[this.session.inputNames[0]] = new ort.Tensor("float32", input, [1,3,448,448]);
@@ -64,23 +55,21 @@ export class AppearanceGazeTracker {
       const yawLogits = outputs[this.session.outputNames[0]].data as Float32Array;
       const pitchLogits = outputs[this.session.outputNames[1]].data as Float32Array;
       return { yaw: decodeAngle(yawLogits), pitch: decodeAngle(pitchLogits), model: this.model };
-    } finally {
-      this.busy = false;
-    }
+    } finally { this.busy = false; }
   }
 
-  private preprocess(source:CanvasImageSource,sourceWidth:number,sourceHeight:number, landmarks: NormalizedLandmark[]): Float32Array | null {
+  private preprocess(video: HTMLVideoElement, landmarks: NormalizedLandmark[]): Float32Array | null {
     if (!landmarks.length) return null;
     const xs=landmarks.map(p=>p.x), ys=landmarks.map(p=>p.y);
     const minX=Math.max(0,Math.min(...xs)), maxX=Math.min(1,Math.max(...xs));
     const minY=Math.max(0,Math.min(...ys)), maxY=Math.min(1,Math.max(...ys));
     const w=maxX-minX,h=maxY-minY,padX=w*.12,padY=h*.12;
-    const sx=Math.max(0,(minX-padX)*sourceWidth), sy=Math.max(0,(minY-padY)*sourceHeight);
-    const ex=Math.min(sourceWidth,(maxX+padX)*sourceWidth), ey=Math.min(sourceHeight,(maxY+padY)*sourceHeight);
+    const sx=Math.max(0,(minX-padX)*video.videoWidth), sy=Math.max(0,(minY-padY)*video.videoHeight);
+    const ex=Math.min(video.videoWidth,(maxX+padX)*video.videoWidth), ey=Math.min(video.videoHeight,(maxY+padY)*video.videoHeight);
     if(ex-sx<20||ey-sy<20)return null;
     this.canvas.width=448;this.canvas.height=448;
     const ctx=this.canvas.getContext("2d",{willReadFrequently:true});if(!ctx)return null;
-    ctx.drawImage(source,sx,sy,ex-sx,ey-sy,0,0,448,448);
+    ctx.drawImage(video,sx,sy,ex-sx,ey-sy,0,0,448,448);
     const rgba=ctx.getImageData(0,0,448,448).data,out=new Float32Array(3*448*448);
     const mean=[.485,.456,.406],sd=[.229,.224,.225],plane=448*448;
     for(let i=0;i<plane;i++){out[i]=(rgba[i*4]/255-mean[0])/sd[0];out[plane+i]=(rgba[i*4+1]/255-mean[1])/sd[1];out[2*plane+i]=(rgba[i*4+2]/255-mean[2])/sd[2];}

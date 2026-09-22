@@ -36,12 +36,6 @@ export class Camera {
     this.video.srcObject = null;
   }
 
-  cloneVideoTrack(): MediaStreamTrack {
-    const track=this.stream?.getVideoTracks()[0];
-    if(!track) throw new Error("Camera has not been started.");
-    return track.clone();
-  }
-
   getSettings(): MediaTrackSettings {
     const track = this.stream?.getVideoTracks()[0];
     if (!track) throw new Error("Camera has not been started.");
