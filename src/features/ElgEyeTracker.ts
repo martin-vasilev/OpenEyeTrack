@@ -1,10 +1,8 @@
-import * as ort from "onnxruntime-web/webgpu";
+import * as ort from "onnxruntime-web";
 import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
 
-// Keep ORT's auxiliary WASM/worker modules on the same version and origin as the
-// installed runtime. The WebGPU build can still request these modules during
-// backend initialization, so an incomplete CDN dist breaks both WebGPU and the
-// subsequent WASM fallback.
+// ELG currently uses the standard ONNX Runtime Web WASM build. Keep its
+// auxiliary modules version-matched and same-origin.
 ort.env.wasm.wasmPaths = "/OpenEyeTrack/ort/";
 
 export interface ElgEyeFeatures {
@@ -45,12 +43,9 @@ export class ElgEyeTracker {
   async initialize(): Promise<void> {
     if (this.session) return;
     const timeout = <T>(p:Promise<T>) => Promise.race([p,new Promise<never>((_,reject)=>window.setTimeout(()=>reject(new Error("ELG model loading timed out after 30 seconds.")),30000))]);
-    // This legacy GazeML graph currently fails ONNX Runtime WebGPU shape
-    // inference ("ShapeInferenceError: Incompatible dimensions"). Keep the
-    // self-hosted WebGPU-capable runtime assets, but use the known-good WASM
-    // execution provider for ELG until the model is converted/rewritten for
-    // WebGPU. Importantly, do not attempt WebGPU first: a failed WebGPU session
-    // can leave ORT initialization unusable for a same-page WASM fallback.
+    // Use the standard WASM build, not the WebGPU bundle with a WASM provider.
+    // The latter still performs WebGPU-oriented graph handling and rejects this
+    // legacy GazeML graph during shape inference.
     this.session=await timeout(ort.InferenceSession.create(MODEL_URL,{executionProviders:["wasm"],graphOptimizationLevel:"all"}));
     this.backend="wasm"; console.info("[OpenEyeTrack ELG] Using WASM backend (WebGPU disabled for incompatible ELG graph)");
   }
