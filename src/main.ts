@@ -99,7 +99,38 @@ calibrationHome.onclick=()=>{postCalibration.hidden=true;setStep("camera");};
 calibrationValidate.onclick=()=>{postCalibration.hidden=true;validateButton.click();};
 dismissHeadWarning.onclick=()=>{headWarning.hidden=true;};
 
-startCalibrationButton.onclick=async()=>{const config=readCalibrationConfig();setBusy(true);startCalibrationButton.disabled=true;status.textContent=`Loading eye feature model: ${config.featureModel}…`;try{latestAppearance=null;latestElg=null;if(config.featureModel==="elg"){await elgTracker.initialize();if(latestFace){latestElg=await elgTracker.estimate(video,latestFace,true);if(!latestElg)throw new Error("ELG loaded but did not produce initial eye landmarks.");}}else{await appearanceTracker.setModel(config.featureModel);if(config.featureModel!=="mediapipe"&&latestFace){latestAppearance=await appearanceTracker.estimate(video,latestFace,true);if(!latestAppearance)throw new Error("The selected appearance model loaded but did not produce an initial gaze estimate.");}}calibration.setConfig(config);calibrationSetup.hidden=true;calibrationStage.hidden=false;calibrationActive=true;gazeFilter.reset();const summary=await calibration.calibrate(()=>latestFeatures);tracker.setCalibrationSummary(summary);validateButton.disabled=false;demoButton.disabled=false;setStep("validation");postCalibration.hidden=false;status.textContent=`Calibration complete: ${summary.config.model.type} | ${summary.observations} total observations (${summary.newObservations} new + ${summary.retainedObservations} retained) | adaptive targets: ${summary.adaptiveUsed?"yes":"no"}.`;}catch(e){calibrationSetup.hidden=false;status.textContent=`Calibration error: ${e instanceof Error?e.message:String(e)}\nTry MediaPipe iris landmarks if the selected ML model cannot be loaded in this browser.`;}finally{calibrationActive=false;calibrationStage.hidden=true;gazeFilter.reset();setBusy(false);startCalibrationButton.disabled=false;}};
+startCalibrationButton.onclick=async()=>{
+  console.info("[OpenEyeTrack ELG] Start calibration clicked");
+  let config:CalibrationConfig;
+  try{config=readCalibrationConfig();console.info("[OpenEyeTrack ELG] Calibration config",config);}
+  catch(e){console.error("[OpenEyeTrack ELG] Failed to read calibration config",e);status.textContent=`Calibration setup error: ${e instanceof Error?e.message:String(e)}`;return;}
+  setBusy(true);startCalibrationButton.disabled=true;status.textContent=`Loading eye feature model: ${config.featureModel}…`;
+  try{
+    latestAppearance=null;latestElg=null;
+    if(config.featureModel==="elg"){
+      console.info("[OpenEyeTrack ELG] Initializing ONNX session");status.textContent="Loading ELG eye-landmark model…";
+      await elgTracker.initialize();
+      console.info("[OpenEyeTrack ELG] ONNX session ready");status.textContent="ELG model loaded. Running first eye-landmark inference…";
+      if(!latestFace)throw new Error("ELG model loaded, but no face landmarks are currently available.");
+      latestElg=await elgTracker.estimate(video,latestFace,true);
+      console.info("[OpenEyeTrack ELG] First inference result",latestElg);
+      if(!latestElg)throw new Error("ELG loaded but did not produce initial eye landmarks.");
+      status.textContent="ELG eye landmarks ready. Starting calibration targets…";
+    }else{
+      console.info("[OpenEyeTrack ELG] Using feature model",config.featureModel);
+      await appearanceTracker.setModel(config.featureModel);
+      if(config.featureModel!=="mediapipe"&&latestFace){latestAppearance=await appearanceTracker.estimate(video,latestFace,true);if(!latestAppearance)throw new Error("The selected appearance model loaded but did not produce an initial gaze estimate.");}
+    }
+    calibration.setConfig(config);calibrationSetup.hidden=true;calibrationStage.hidden=false;calibrationActive=true;gazeFilter.reset();
+    console.info("[OpenEyeTrack ELG] Calibration targets starting");
+    const summary=await calibration.calibrate(()=>latestFeatures);
+    console.info("[OpenEyeTrack ELG] Calibration complete",summary);
+    tracker.setCalibrationSummary(summary);validateButton.disabled=false;demoButton.disabled=false;setStep("validation");postCalibration.hidden=false;status.textContent=`Calibration complete: ${summary.config.model.type} | ${summary.observations} total observations (${summary.newObservations} new + ${summary.retainedObservations} retained) | adaptive targets: ${summary.adaptiveUsed?"yes":"no"}.`;
+  }catch(e){
+    console.error("[OpenEyeTrack ELG] Calibration startup failed",e);
+    calibrationSetup.hidden=false;status.textContent=`Calibration error: ${e instanceof Error?e.message:String(e)}\nTry MediaPipe iris landmarks if the selected ML model cannot be loaded in this browser.`;
+  }finally{calibrationActive=false;calibrationStage.hidden=true;gazeFilter.reset();setBusy(false);startCalibrationButton.disabled=false;}
+};
 validateButton.onclick=async()=>{calibrationStage.hidden=false;calibrationActive=true;gazeDot.hidden=true;setBusy(true);gazeFilter.reset();try{const r=await calibration.validate(()=>latestFeatures);tracker.setValidationResult(r);metricMean.textContent=`${r.meanPx.toFixed(0)} px`;metricMedian.textContent=`${r.medianPx.toFixed(0)} px`;metricPrecision.textContent=`${r.precisionRmsS2SPx.toFixed(1)} px`;metricValid.textContent=`${((1-r.dataLoss)*100).toFixed(0)}%`;renderValidationMap(r);validationResults.hidden=false;demoButton.disabled=false;setStep("demo");const model=calibration.calibrationSummary?.config.model.type??"model";status.textContent=`Validation (${model}): mean ${r.meanPx.toFixed(0)} px | median ${r.medianPx.toFixed(0)} px | RMSE ${r.rmsePx.toFixed(0)} px\nPrecision: RMS-S2S ${r.precisionRmsS2SPx.toFixed(1)} px | spatial SD ${r.precisionSdPx.toFixed(1)} px | data loss ${(r.dataLoss*100).toFixed(1)}%\nValidation did not refit the active gaze estimator. Its error map was saved only for a future adaptive recalibration.`;}catch(e){status.textContent=`Validation error: ${e instanceof Error?e.message:String(e)}`;}finally{calibrationActive=false;calibrationStage.hidden=true;gazeFilter.reset();setBusy(false);}};
 
 function beginRecording(){headGuard.setConfig(readHeadGuardConfig());headGuard.start(latestFeatures);tracker.startRecording();tracker.setTrial("test");tracker.mark("recording_start");recording=true;recordButton.textContent="Stop recording";exportButton.disabled=true;}
