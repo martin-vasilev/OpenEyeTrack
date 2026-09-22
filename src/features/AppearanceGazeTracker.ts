@@ -1,6 +1,10 @@
 import * as ort from "onnxruntime-web";
 import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
 
+// GitHub Pages serves the app from /OpenEyeTrack/. Point ORT at an absolute
+// runtime location so it does not try to fetch its WASM files from the site root.
+ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/";
+
 export type EyeFeatureModel = "mediapipe" | "mobileone_s0" | "resnet34";
 
 export interface AppearanceGazeFeatures {
@@ -29,10 +33,11 @@ export class AppearanceGazeTracker {
     this.model = model;
     this.session = null;
     if (model === "mediapipe") return;
-    this.session = await ort.InferenceSession.create(MODEL_URLS[model], {
+    const load = ort.InferenceSession.create(MODEL_URLS[model], {
       executionProviders: ["wasm"],
       graphOptimizationLevel: "all"
     });
+    this.session = await withTimeout(load, 30000, `Timed out loading ${model}.`);
   }
 
   async estimate(video: HTMLVideoElement, landmarks: NormalizedLandmark[], force=false): Promise<AppearanceGazeFeatures | null> {
@@ -74,4 +79,8 @@ function decodeAngle(logits: Float32Array): number {
   let max=-Infinity;for(const v of logits)if(v>max)max=v;
   let sum=0,weighted=0;for(let i=0;i<logits.length;i++){const p=Math.exp(logits[i]-max);sum+=p;weighted+=p*i;}
   const degrees=(weighted/sum)*4-180;return degrees*Math.PI/180;
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return Promise.race([promise,new Promise<T>((_,reject)=>window.setTimeout(()=>reject(new Error(message)),ms))]);
 }
