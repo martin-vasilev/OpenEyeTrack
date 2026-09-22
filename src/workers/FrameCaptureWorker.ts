@@ -6,7 +6,8 @@ function sendNext(){
   if(!waiting||!queue.length)return;
   waiting=false;
   const frame=queue.shift()!;
-  self.postMessage({type:"frame",frame,captured,dropped,queueDepth:queue.length},[frame]);
+  const workerSelf=self as unknown as {postMessage:(message:unknown,transfer:Transferable[])=>void};
+  workerSelf.postMessage({type:"frame",frame,captured,dropped,queueDepth:queue.length},[frame]);
 }
 async function consume(readable:ReadableStream<VideoFrame>){
   const reader=readable.getReader();
