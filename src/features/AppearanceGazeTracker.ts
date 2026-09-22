@@ -84,30 +84,4 @@ function decodeAngle(logits: Float32Array): number {
 
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   return Promise.race([promise,new Promise<T>((_,reject)=>window.setTimeout(()=>reject(new Error(message)),ms))]);
-}  private preprocess(video: HTMLVideoElement, landmarks: NormalizedLandmark[]): Float32Array | null {
-    if (!landmarks.length) return null;
-    const xs=landmarks.map(p=>p.x), ys=landmarks.map(p=>p.y);
-    const minX=Math.max(0,Math.min(...xs)), maxX=Math.min(1,Math.max(...xs));
-    const minY=Math.max(0,Math.min(...ys)), maxY=Math.min(1,Math.max(...ys));
-    const w=maxX-minX,h=maxY-minY,padX=w*.12,padY=h*.12;
-    const sx=Math.max(0,(minX-padX)*sourceWidth), sy=Math.max(0,(minY-padY)*sourceHeight);
-    const ex=Math.min(sourceWidth,(maxX+padX)*sourceWidth), ey=Math.min(sourceHeight,(maxY+padY)*sourceHeight);
-    if(ex-sx<20||ey-sy<20)return null;
-    this.canvas.width=448;this.canvas.height=448;
-    const ctx=this.canvas.getContext("2d",{willReadFrequently:true});if(!ctx)return null;
-    ctx.drawImage(video,sx,sy,ex-sx,ey-sy,0,0,448,448);
-    const rgba=ctx.getImageData(0,0,448,448).data,out=new Float32Array(3*448*448);
-    const mean=[.485,.456,.406],sd=[.229,.224,.225],plane=448*448;
-    for(let i=0;i<plane;i++){out[i]=(rgba[i*4]/255-mean[0])/sd[0];out[plane+i]=(rgba[i*4+1]/255-mean[1])/sd[1];out[2*plane+i]=(rgba[i*4+2]/255-mean[2])/sd[2];}
-    return out;
-  }
-}
-function decodeAngle(logits: Float32Array): number {
-  let max=-Infinity;for(const v of logits)if(v>max)max=v;
-  let sum=0,weighted=0;for(let i=0;i<logits.length;i++){const p=Math.exp(logits[i]-max);sum+=p;weighted+=p*i;}
-  const degrees=(weighted/sum)*4-180;return degrees*Math.PI/180;
-}
-
-function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
-  return Promise.race([promise,new Promise<T>((_,reject)=>window.setTimeout(()=>reject(new Error(message)),ms))]);
 }
