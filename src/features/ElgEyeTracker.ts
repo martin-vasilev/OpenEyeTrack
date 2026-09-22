@@ -14,6 +14,11 @@ export interface ElgEyeFeatures {
   leftRelY: number;
   rightRelX: number;
   rightRelY: number;
+  leftRelXRaw: number;
+  leftRelYRaw: number;
+  rightRelXRaw: number;
+  rightRelYRaw: number;
+  binocularReliability: number;
   leftConfidence: number;
   rightConfidence: number;
   inferenceMs: number;
@@ -32,6 +37,7 @@ export class ElgEyeTracker {
   private lastRun = 0;
   private readonly minIntervalMs = 33;
   private history: ElgEyeFeatures[] = [];
+  private filtered: {leftRelX:number;leftRelY:number;rightRelX:number;rightRelY:number}|null = null;
   private nextSequenceId = 1;
   private queue: Array<{sequenceId:number;acquisitionTimestampMs:number;input:Float32Array;resolve:(v:ElgEyeFeatures|null)=>void;reject:(e:unknown)=>void}> = [];
   private processing = false;
@@ -40,7 +46,7 @@ export class ElgEyeTracker {
 
   get activeBackend(): "webgpu" | "wasm" { return this.backend; }
 
-  reset(): void { this.history = []; }
+  reset(): void { this.history = []; this.filtered = null; }
 
   get queueDepth(): number { return this.queue.length + (this.processing ? 1 : 0); }
 
@@ -50,9 +56,29 @@ export class ElgEyeTracker {
   }
 
   private stabilize(v: ElgEyeFeatures): ElgEyeFeatures {
+    const raw={leftRelX:v.leftRelX,leftRelY:v.leftRelY,rightRelX:v.rightRelX,rightRelY:v.rightRelY};
     this.history.push(v); if(this.history.length>5)this.history.shift();
-    const recent=this.history.slice(-3), med=(key:keyof ElgEyeFeatures)=>{const a=recent.map(x=>x[key] as number).sort((a,b)=>a-b);return a[Math.floor(a.length/2)];};
-    return {...v,leftRelX:med("leftRelX"),leftRelY:med("leftRelY"),rightRelX:med("rightRelX"),rightRelY:med("rightRelY")};
+    if(!this.filtered){this.filtered={...raw};return {...v,...raw,leftRelXRaw:raw.leftRelX,leftRelYRaw:raw.leftRelY,rightRelXRaw:raw.rightRelX,rightRelYRaw:raw.rightRelY,binocularReliability:1};}
+    const prev=this.filtered;
+    const dl={x:raw.leftRelX-prev.leftRelX,y:raw.leftRelY-prev.leftRelY};
+    const dr={x:raw.rightRelX-prev.rightRelX,y:raw.rightRelY-prev.rightRelY};
+    const magL=Math.hypot(dl.x,dl.y),magR=Math.hypot(dr.x,dr.y);
+    const dot=dl.x*dr.x+dl.y*dr.y, direction=(magL>1e-5&&magR>1e-5)?Math.max(0,dot/(magL*magR)):1;
+    const magnitudeAgreement=1-Math.min(1,Math.abs(magL-magR)/Math.max(.015,Math.max(magL,magR)));
+    const confidence=Math.max(0,Math.min(1,(v.leftConfidence+v.rightConfidence)/2));
+    const binocularReliability=Math.max(0,Math.min(1,.45*direction+.35*magnitudeAgreement+.20*confidence));
+    const jointMovement=(magL+magR)/2;
+    // Fixation-scale changes get strong smoothing. Large, binocularly coherent
+    // changes get a high gain so genuine saccades are not smeared in time.
+    const movementGain=jointMovement<.012?.16:jointMovement<.03?.28:jointMovement<.065?.52:.82;
+    const alpha=Math.max(.08,Math.min(.90,movementGain*(.35+.65*binocularReliability)));
+    // If one eye jumps much farther than the other, reduce only that eye's gain.
+    const imbalance=Math.max(.02,Math.max(magL,magR));
+    const leftPenalty=magL>magR*1.8?Math.max(.2,1-(magL-magR)/imbalance):1;
+    const rightPenalty=magR>magL*1.8?Math.max(.2,1-(magR-magL)/imbalance):1;
+    const al=Math.max(.06,alpha*leftPenalty),ar=Math.max(.06,alpha*rightPenalty);
+    this.filtered={leftRelX:prev.leftRelX+al*dl.x,leftRelY:prev.leftRelY+al*dl.y,rightRelX:prev.rightRelX+ar*dr.x,rightRelY:prev.rightRelY+ar*dr.y};
+    return {...v,...this.filtered,leftRelXRaw:raw.leftRelX,leftRelYRaw:raw.leftRelY,rightRelXRaw:raw.rightRelX,rightRelYRaw:raw.rightRelY,binocularReliability};
   }
 
   async initialize(): Promise<void> {
@@ -102,7 +128,7 @@ export class ElgEyeTracker {
           for(const {tensor} of candidates){if(!(tensor.data instanceof Float32Array))continue;const dims=tensor.dims.map(Number);const l=decodeIris(tensor.data,dims,0),r=decodeIris(tensor.data,dims,1);if(l&&r){decoded={l,r};break;}}
           if(!decoded)throw new Error(`ELG model ran, but no output matched an 18-channel 60×36 heatmap. Outputs: ${candidates.map(({name,tensor})=>`${name} [${tensor.dims.join("×")}]`).join(", ")}`);
           const processedTimestampMs=performance.now(),{l,r}=decoded;
-          job.resolve(this.stabilize({sequenceId:job.sequenceId,acquisitionTimestampMs:job.acquisitionTimestampMs,processedTimestampMs,latencyMs:processedTimestampMs-job.acquisitionTimestampMs,leftRelX:l.x,leftRelY:l.y,rightRelX:r.x,rightRelY:r.y,leftConfidence:l.confidence,rightConfidence:r.confidence,inferenceMs:processedTimestampMs-started,timestampMs:job.acquisitionTimestampMs}));
+          job.resolve(this.stabilize({sequenceId:job.sequenceId,acquisitionTimestampMs:job.acquisitionTimestampMs,processedTimestampMs,latencyMs:processedTimestampMs-job.acquisitionTimestampMs,leftRelX:l.x,leftRelY:l.y,rightRelX:r.x,rightRelY:r.y,leftRelXRaw:l.x,leftRelYRaw:l.y,rightRelXRaw:r.x,rightRelYRaw:r.y,binocularReliability:1,leftConfidence:l.confidence,rightConfidence:r.confidence,inferenceMs:processedTimestampMs-started,timestampMs:job.acquisitionTimestampMs}));
         }catch(e){job.reject(e);}
       }
     }finally{

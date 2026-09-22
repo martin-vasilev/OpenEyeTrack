@@ -48,6 +48,11 @@ export interface EyeTrackingSample {
   elgProcessedTimestampMs: number | null;
   elgLatencyMs: number | null;
   elgQueueDepth: number | null;
+  elgLeftRelXRaw: number | null;
+  elgLeftRelYRaw: number | null;
+  elgRightRelXRaw: number | null;
+  elgRightRelYRaw: number | null;
+  elgBinocularReliability: number | null;
   trial: string | null;
   event: string | null;
   calibrationId: string | null;
