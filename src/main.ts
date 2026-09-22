@@ -100,7 +100,7 @@ const DEMO_VIDEOS=[
 const CALIBRATION_STORAGE_KEY="openeyetrack.calibration.v1";
 const tracker=new OpenEyeTrack(video),faceTracker=new FaceFeatureTracker(),appearanceTracker=new AppearanceGazeTracker(),elgTracker=new ElgEyeTracker(),overlay=new LandmarkOverlay(canvas),calibration=new CalibrationController(calibrationTarget,readCalibrationConfig()),gazeFilter=new AdaptiveGazeFilter(),headGuard=new HeadMovementGuard(readHeadGuardConfig());
 let baselineFace:import("@mediapipe/tasks-vision").NormalizedLandmark[]|null=null,poseReadySince:number|null=null;
-let poorValidationTargets:import("./calibration/CalibrationController").ValidationPointResult[]=[],recording=false,lastRecording:EyeTrackingSample[]=[],statusTimer:number|null=null,detectionAnimation:number|null=null,detectedFaces=0,latestFeatures:EyeHeadFeatures|null=null,latestFace:import("@mediapipe/tasks-vision").NormalizedLandmark[]|null=null,latestAppearance:AppearanceGazeFeatures|null=null,latestElg:ElgEyeFeatures|null=null,calibrationActive=false,headPositionReadySince:number|null=null,headPositionLatched=false;
+let poorValidationTargets:import("./calibration/CalibrationController").ValidationPointResult[]=[],recording=false,lastRecording:EyeTrackingSample[]=[],statusTimer:number|null=null,detectionAnimation:number|null=null,lastProcessedVideoTime=-1,detectedFaces=0,latestFeatures:EyeHeadFeatures|null=null,latestFace:import("@mediapipe/tasks-vision").NormalizedLandmark[]|null=null,latestAppearance:AppearanceGazeFeatures|null=null,latestElg:ElgEyeFeatures|null=null,calibrationActive=false,headPositionReadySince:number|null=null,headPositionLatched=false;
 
 startButton.onclick=async()=>{try{status.textContent="Loading face landmark model…";await faceTracker.initialize();status.textContent="Requesting camera permission…";const settings=await tracker.start();placeholder.hidden=true;startButton.disabled=true;stopButton.disabled=false;recordButton.disabled=false;calibrateButton.disabled=false;runLandmarks();updateStatus(settings);statusTimer=window.setInterval(()=>updateStatus(settings),500);}catch(e){status.textContent=`Startup error: ${e instanceof Error?e.message:String(e)}`;}};
 recordButton.onclick=()=>{if(recording)void finishRecording("recording_stop");else beginRecording();};
@@ -180,6 +180,11 @@ async function finishRecording(event:string){tracker.mark(event);recording=false
 function interruptForHeadMovement(reason:string){if(!recording)return;finishRecording("head_movement_interrupt");headWarningText.textContent=`Recording stopped because ${reason}.`;headWarning.hidden=false;status.textContent=`Recording interrupted: ${reason}. ${lastRecording.length} samples retained and available for export.`;}
 
 function runLandmarks(){
+  // requestAnimationFrame follows the display (often 60+ Hz), not the webcam.
+  // Never run MediaPipe/ELG twice against the same 30-Hz camera frame.
+  const videoTime=video.currentTime;
+  if(videoTime===lastProcessedVideoTime){detectionAnimation=requestAnimationFrame(runLandmarks);return;}
+  lastProcessedVideoTime=videoTime;
   const pipelineStarted=performance.now();
   const selected=(featureModelInput?.value??"elg")as EyeFeatureModel;
   const acquisitionMode=(elgAcquisitionModeInput?.value??"queued")as "queued"|"skip-while-busy";

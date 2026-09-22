@@ -33,6 +33,7 @@ const RIGHT_EYE = { inner: 133, outer: 33 };
 export class ElgEyeTracker {
   private session: ort.InferenceSession | null = null;
   private canvas = document.createElement("canvas");
+  private ctx: CanvasRenderingContext2D | null;
   private lastRun = 0;
   private readonly minIntervalMs = 33;
   private history: ElgEyeFeatures[] = [];
@@ -43,6 +44,14 @@ export class ElgEyeTracker {
   private drainWaiters: Array<()=>void> = [];
   private backend: "webgpu" | "wasm" = "wasm";
   private acquisitionMode: "queued" | "skip-while-busy" = "queued";
+
+  constructor() {
+    // Allocate the 60×36 crop surface once. Resizing a canvas clears it and may
+    // reallocate its backing store; doing that twice per gaze sample was pure
+    // overhead. clearRect() below still guarantees identical clean eye crops.
+    this.canvas.width=W; this.canvas.height=H;
+    this.ctx=this.canvas.getContext("2d",{willReadFrequently:true});
+  }
 
   get activeBackend(): "webgpu" | "wasm" { return this.backend; }
   get activeAcquisitionMode(): "queued" | "skip-while-busy" { return this.acquisitionMode; }
@@ -155,8 +164,7 @@ export class ElgEyeTracker {
     // not masquerade as iris motion.
     const angle=Math.atan2(by-ay,bx-ax);
     const cropW=cornerDistance*1.8, cropH=cropW*H/W;
-    this.canvas.width=W;this.canvas.height=H;
-    const ctx=this.canvas.getContext("2d",{willReadFrequently:true});if(!ctx)return null;
+    const ctx=this.ctx;if(!ctx)return null;
     ctx.save();ctx.clearRect(0,0,W,H);
     ctx.translate(W/2,H/2);
     ctx.scale(W/cropW,H/cropH);
