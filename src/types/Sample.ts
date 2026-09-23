@@ -12,6 +12,13 @@ export interface EyeTrackingSample {
   gazePredictionMs: number | null;
   overlayRenderMs: number | null;
   elgAcquisitionMode: string | null;
+  webgpuStatus: string | null;
+  webgpuError: string | null;
+  webgpuBenchmarkRuns: number | null;
+  webgpuBenchmarkFailures: number | null;
+  webgpuWasmMedianMs: number | null;
+  webgpuMedianMs: number | null;
+  webgpuMaxAbsDiffMedian: number | null;
   gazeXRaw: number | null;
   gazeYRaw: number | null;
   gazeX: number | null;
