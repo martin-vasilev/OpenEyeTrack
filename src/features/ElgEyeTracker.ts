@@ -43,6 +43,13 @@ export class ElgEyeTracker {
   private processing = false;
   private drainWaiters: Array<()=>void> = [];
   private backend: "webgpu" | "wasm" = "wasm";
+  private benchmarkSession: ort.InferenceSession | null = null;
+  private benchmarkInitAttempted = false;
+  private benchmarkRuns = 0;
+  private benchmarkFailures = 0;
+  private benchmarkWasmMs: number[] = [];
+  private benchmarkWebgpuMs: number[] = [];
+  private benchmarkMaxAbsDiff: number[] = [];
   private acquisitionMode: "queued" | "skip-while-busy" = "queued";
 
   constructor() {
@@ -55,6 +62,13 @@ export class ElgEyeTracker {
 
   get activeBackend(): "webgpu" | "wasm" { return this.backend; }
   get activeAcquisitionMode(): "queued" | "skip-while-busy" { return this.acquisitionMode; }
+  get webgpuBenchmarkSummary(): string {
+    const median=(x:number[])=>{if(!x.length)return null;const s=[...x].sort((a,b)=>a-b);return s[Math.floor(s.length/2)];};
+    const gpu=median(this.benchmarkWebgpuMs),diff=median(this.benchmarkMaxAbsDiff);
+    if(!this.benchmarkInitAttempted)return "WebGPU benchmark: waiting";
+    if(!this.benchmarkSession)return `WebGPU benchmark: unavailable (${this.benchmarkFailures} failure${this.benchmarkFailures===1?"":"s"})`;
+    return `WebGPU benchmark: ${this.benchmarkRuns} runs · median ${gpu?.toFixed(1)??"?"} ms · median max |Δ| ${diff?.toExponential(2)??"?"}`;
+  }
   setAcquisitionMode(mode:"queued"|"skip-while-busy"):void { this.acquisitionMode=mode; }
 
   reset(): void { this.history = []; this.filtered = null; }
@@ -101,6 +115,12 @@ export class ElgEyeTracker {
     // before inference begins; the model previously ran without these rewrites.
     this.session=await timeout(ort.InferenceSession.create(MODEL_URL,{executionProviders:["wasm"],graphOptimizationLevel:"all"}));
     this.backend="wasm"; console.info("[OpenEyeTrack ELG] Using restored known-working WASM configuration");
+    // Experimental shadow benchmark only. Production gaze remains WASM.
+    this.benchmarkInitAttempted=true;
+    try{
+      this.benchmarkSession=await timeout(ort.InferenceSession.create(MODEL_URL,{executionProviders:["webgpu"],graphOptimizationLevel:"disabled"}));
+      console.info("[OpenEyeTrack ELG benchmark] WebGPU shadow session ready");
+    }catch(e){this.benchmarkFailures++;this.benchmarkSession=null;console.warn("[OpenEyeTrack ELG benchmark] WebGPU unavailable; WASM remains authoritative",e);}
   }
 
   estimate(video: HTMLVideoElement, landmarks: NormalizedLandmark[], force=false): Promise<ElgEyeFeatures | null> {
@@ -138,6 +158,21 @@ export class ElgEyeTracker {
           const feeds:Record<string,ort.Tensor>={};
           feeds[this.session.inputNames[0]]=new ort.Tensor("float32",job.input,[2,H,W,1]);
           const outputs=await this.session.run(feeds);
+          const wasmFinished=performance.now();
+          this.benchmarkWasmMs.push(wasmFinished-started);if(this.benchmarkWasmMs.length>120)this.benchmarkWasmMs.shift();
+          // Run WebGPU only as a low-frequency shadow benchmark so it cannot change
+          // calibration, filtering, recording, or the authoritative WASM result.
+          if(this.benchmarkSession && this.benchmarkRuns<30 && this.benchmarkRuns%1===0){
+            try{
+              const gpuFeeds:Record<string,ort.Tensor>={};gpuFeeds[this.benchmarkSession.inputNames[0]]=new ort.Tensor("float32",job.input,[2,H,W,1]);
+              const gpuStarted=performance.now(),gpuOutputs=await this.benchmarkSession.run(gpuFeeds),gpuFinished=performance.now();
+              const wasmName=this.session.outputNames[0],gpuName=this.benchmarkSession.outputNames[0];
+              const wd=outputs[wasmName]?.data,gd=gpuOutputs[gpuName]?.data;
+              let maxDiff=NaN;if(wd instanceof Float32Array&&gd instanceof Float32Array&&wd.length===gd.length){maxDiff=0;for(let i=0;i<wd.length;i++)maxDiff=Math.max(maxDiff,Math.abs(wd[i]-gd[i]));}
+              this.benchmarkWebgpuMs.push(gpuFinished-gpuStarted);this.benchmarkMaxAbsDiff.push(maxDiff);this.benchmarkRuns++;
+              console.info("[OpenEyeTrack ELG benchmark]",{run:this.benchmarkRuns,wasmMs:wasmFinished-started,webgpuMs:gpuFinished-gpuStarted,maxAbsDiff:maxDiff});
+            }catch(e){this.benchmarkFailures++;this.benchmarkSession=null;console.warn("[OpenEyeTrack ELG benchmark] WebGPU shadow run failed; disabling benchmark",e);}
+          }
           const candidates=this.session.outputNames.map(name=>({name,tensor:outputs[name]})).filter((v):v is {name:string;tensor:ort.Tensor}=>Boolean(v.tensor));
           let decoded:{l:{x:number;y:number;confidence:number};r:{x:number;y:number;confidence:number}}|null=null;
           for(const {tensor} of candidates){if(!(tensor.data instanceof Float32Array))continue;const dims=tensor.dims.map(Number);const l=decodeIris(tensor.data,dims,0),r=decodeIris(tensor.data,dims,1);if(l&&r){decoded={l,r};break;}}
