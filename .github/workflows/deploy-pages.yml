@@ -21,35 +21,54 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout stable main
         uses: actions/checkout@v6
+        with:
+          ref: main
+          path: main-src
+
+      - name: Checkout dev
+        uses: actions/checkout@v6
+        with:
+          ref: dev
+          path: dev-src
 
       - name: Set up Node
         uses: actions/setup-node@v6
         with:
           node-version: 22
 
-      - name: Install dependencies
-        run: npm install
-
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Download gaze models
+      - name: Build stable main
+        working-directory: main-src
         run: |
-          mkdir -p public/models
+          npm install
+          npm run typecheck
+          mkdir -p public/models public/ort
           curl -L --fail --retry 3 -o public/models/gazeml_elg_i60x36_n32.onnx https://storage.googleapis.com/ailia-models/gazeml/gazeml_elg_i60x36_n32.onnx
           curl -L --fail --retry 3 -o public/models/mobileone_s0_gaze.onnx https://github.com/yakhyo/gaze-estimation/releases/download/weights/mobileone_s0_gaze.onnx
           curl -L --fail --retry 3 -o public/models/resnet34_gaze.onnx https://github.com/yakhyo/gaze-estimation/releases/download/weights/resnet34_gaze.onnx
-
-      - name: Copy ONNX Runtime browser assets
-        run: |
-          mkdir -p public/ort
           cp node_modules/onnxruntime-web/dist/ort-wasm*.wasm public/ort/
           cp node_modules/onnxruntime-web/dist/ort-wasm*.mjs public/ort/
+          npm run build
 
-      - name: Build
-        run: npm run build
+      - name: Build dev preview
+        working-directory: dev-src
+        run: |
+          npm install
+          npm run typecheck
+          mkdir -p public/models public/ort
+          curl -L --fail --retry 3 -o public/models/gazeml_elg_i60x36_n32.onnx https://storage.googleapis.com/ailia-models/gazeml/gazeml_elg_i60x36_n32.onnx
+          curl -L --fail --retry 3 -o public/models/mobileone_s0_gaze.onnx https://github.com/yakhyo/gaze-estimation/releases/download/weights/mobileone_s0_gaze.onnx
+          curl -L --fail --retry 3 -o public/models/resnet34_gaze.onnx https://github.com/yakhyo/gaze-estimation/releases/download/weights/resnet34_gaze.onnx
+          cp node_modules/onnxruntime-web/dist/ort-wasm*.wasm public/ort/
+          cp node_modules/onnxruntime-web/dist/ort-wasm*.mjs public/ort/
+          npm run build -- --base=/OpenEyeTrack/dev/
+
+      - name: Combine stable and dev sites
+        run: |
+          mkdir -p site/dev
+          cp -R main-src/dist/. site/
+          cp -R dev-src/dist/. site/dev/
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
@@ -57,7 +76,7 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: ./dist
+          path: ./site
 
       - name: Deploy to GitHub Pages
         id: deployment
