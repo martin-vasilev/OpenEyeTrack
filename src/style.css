@@ -87,3 +87,5 @@ pre { margin-top:1rem; padding:1rem; overflow-x:auto; border-radius:10px; backgr
 .pose-motion-illustration{flex-direction:column;gap:.25rem}.pose-example{display:flex;align-items:center;justify-content:center;gap:1rem}.pose-example>div{display:flex;flex-direction:column;align-items:center}.pose-example-label{font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#64748b}.pose-person{width:82px;height:82px;color:#334155}.pose-example>div:last-child .pose-person{color:#0f766e}.pose-subcaption{font-size:.8rem;color:#64748b}.pose-caption{text-align:center;max-width:none}.pose-arrow{min-width:40px;text-align:center}
 
 .check-dot.warn{background:#f59e0b;box-shadow:0 0 0 4px rgba(245,158,11,.14)}
+
+.gpu-status{width:max-content;padding:.42rem .7rem;border:1px solid #86efac;border-radius:999px;background:#dcfce7;color:#166534}.gpu-dot{width:11px;height:11px;border-radius:50%;background:#16a34a;box-shadow:0 0 0 4px rgba(22,163,74,.12)}
