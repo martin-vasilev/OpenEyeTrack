@@ -45,6 +45,8 @@ export class ElgEyeTracker {
   private backend: "webgpu" | "wasm" = "wasm";
   private benchmarkSession: ort.InferenceSession | null = null;
   private benchmarkInitAttempted = false;
+  private benchmarkInitializing = false;
+  private benchmarkError: string | null = null;
   private benchmarkRuns = 0;
   private benchmarkFailures = 0;
   private benchmarkWasmMs: number[] = [];
@@ -63,6 +65,12 @@ export class ElgEyeTracker {
   get activeBackend(): "webgpu" | "wasm" { return this.backend; }
   get activeAcquisitionMode(): "queued" | "skip-while-busy" { return this.acquisitionMode; }
   get webgpuActive(): boolean { return this.benchmarkSession !== null; }
+  get webgpuStatus(): "waiting"|"initializing"|"active"|"unavailable" { return this.benchmarkSession?"active":this.benchmarkInitializing?"initializing":this.benchmarkInitAttempted?"unavailable":"waiting"; }
+  get webgpuError(): string | null { return this.benchmarkError; }
+  get webgpuBenchmarkMetrics(): {status:string;error:string|null;runs:number;failures:number;wasmMedianMs:number|null;webgpuMedianMs:number|null;maxAbsDiffMedian:number|null} {
+    const median=(x:number[])=>{const v=x.filter(Number.isFinite).sort((a,b)=>a-b);return v.length?v[Math.floor(v.length/2)]:null;};
+    return {status:this.webgpuStatus,error:this.benchmarkError,runs:this.benchmarkRuns,failures:this.benchmarkFailures,wasmMedianMs:median([...this.benchmarkWasmMs]),webgpuMedianMs:median([...this.benchmarkWebgpuMs]),maxAbsDiffMedian:median([...this.benchmarkMaxAbsDiff])};
+  }
   get webgpuBenchmarkSummary(): string {
     const median=(x:number[])=>{if(!x.length)return null;const s=[...x].sort((a,b)=>a-b);return s[Math.floor(s.length/2)];};
     const gpu=median(this.benchmarkWebgpuMs),diff=median(this.benchmarkMaxAbsDiff);
@@ -117,11 +125,11 @@ export class ElgEyeTracker {
     this.session=await timeout(ort.InferenceSession.create(MODEL_URL,{executionProviders:["wasm"],graphOptimizationLevel:"all"}));
     this.backend="wasm"; console.info("[OpenEyeTrack ELG] Using restored known-working WASM configuration");
     // Experimental shadow benchmark only. Production gaze remains WASM.
-    this.benchmarkInitAttempted=true;
+    this.benchmarkInitAttempted=true;this.benchmarkInitializing=true;this.benchmarkError=null;
     try{
       this.benchmarkSession=await timeout(ort.InferenceSession.create(MODEL_URL,{executionProviders:["webgpu"],graphOptimizationLevel:"disabled"}));
-      console.info("[OpenEyeTrack ELG benchmark] WebGPU shadow session ready");
-    }catch(e){this.benchmarkFailures++;this.benchmarkSession=null;console.warn("[OpenEyeTrack ELG benchmark] WebGPU unavailable; WASM remains authoritative",e);}
+      this.benchmarkInitializing=false;console.info("[OpenEyeTrack ELG benchmark] WebGPU shadow session ready");
+    }catch(e){this.benchmarkInitializing=false;this.benchmarkFailures++;this.benchmarkSession=null;this.benchmarkError=e instanceof Error?e.message:String(e);console.warn("[OpenEyeTrack ELG benchmark] WebGPU unavailable; WASM remains authoritative",e);}
   }
 
   estimate(video: HTMLVideoElement, landmarks: NormalizedLandmark[], force=false): Promise<ElgEyeFeatures | null> {
@@ -172,7 +180,7 @@ export class ElgEyeTracker {
               let maxDiff=NaN;if(wd instanceof Float32Array&&gd instanceof Float32Array&&wd.length===gd.length){maxDiff=0;for(let i=0;i<wd.length;i++)maxDiff=Math.max(maxDiff,Math.abs(wd[i]-gd[i]));}
               this.benchmarkWebgpuMs.push(gpuFinished-gpuStarted);this.benchmarkMaxAbsDiff.push(maxDiff);this.benchmarkRuns++;
               console.info("[OpenEyeTrack ELG benchmark]",{run:this.benchmarkRuns,wasmMs:wasmFinished-started,webgpuMs:gpuFinished-gpuStarted,maxAbsDiff:maxDiff});
-            }catch(e){this.benchmarkFailures++;this.benchmarkSession=null;console.warn("[OpenEyeTrack ELG benchmark] WebGPU shadow run failed; disabling benchmark",e);}
+            }catch(e){this.benchmarkFailures++;this.benchmarkSession=null;this.benchmarkError=e instanceof Error?e.message:String(e);console.warn("[OpenEyeTrack ELG benchmark] WebGPU shadow run failed; disabling benchmark",e);}
           }
           const candidates=this.session.outputNames.map(name=>({name,tensor:outputs[name]})).filter((v):v is {name:string;tensor:ort.Tensor}=>Boolean(v.tensor));
           let decoded:{l:{x:number;y:number;confidence:number};r:{x:number;y:number;confidence:number}}|null=null;
