@@ -1,0 +1,53 @@
+name: Build OpenEyeTrack dev preview
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dev-preview
+  cancel-in-progress: true
+
+jobs:
+  build-dev:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Download gaze models
+        run: |
+          mkdir -p public/models
+          curl -L --fail --retry 3 -o public/models/gazeml_elg_i60x36_n32.onnx https://storage.googleapis.com/ailia-models/gazeml/gazeml_elg_i60x36_n32.onnx
+          curl -L --fail --retry 3 -o public/models/mobileone_s0_gaze.onnx https://github.com/yakhyo/gaze-estimation/releases/download/weights/mobileone_s0_gaze.onnx
+          curl -L --fail --retry 3 -o public/models/resnet34_gaze.onnx https://github.com/yakhyo/gaze-estimation/releases/download/weights/resnet34_gaze.onnx
+
+      - name: Copy ONNX Runtime browser assets
+        run: |
+          mkdir -p public/ort
+          cp node_modules/onnxruntime-web/dist/ort-wasm*.wasm public/ort/
+          cp node_modules/onnxruntime-web/dist/ort-wasm*.mjs public/ort/
+
+      - name: Build dev preview
+        run: npm run build -- --base=/OpenEyeTrack/dev/
+
+      - name: Upload dev preview artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openeyetrack-dev-preview
+          path: ./dist
