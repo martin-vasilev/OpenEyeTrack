@@ -62,6 +62,7 @@ export class ElgEyeTracker {
 
   get activeBackend(): "webgpu" | "wasm" { return this.backend; }
   get activeAcquisitionMode(): "queued" | "skip-while-busy" { return this.acquisitionMode; }
+  get webgpuActive(): boolean { return this.benchmarkSession !== null; }
   get webgpuBenchmarkSummary(): string {
     const median=(x:number[])=>{if(!x.length)return null;const s=[...x].sort((a,b)=>a-b);return s[Math.floor(s.length/2)];};
     const gpu=median(this.benchmarkWebgpuMs),diff=median(this.benchmarkMaxAbsDiff);
