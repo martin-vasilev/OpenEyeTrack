@@ -5,196 +5,45 @@ import { resetElgDiagnostics, updateElgDiagnostics } from "./ElgDiagnostics";
 ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/";
 
 export interface ElgEyeFeatures {
-  sequenceId: number;
-  acquisitionTimestampMs: number;
-  processedTimestampMs: number;
-  latencyMs: number;
+  sequenceId: number; acquisitionTimestampMs: number; processedTimestampMs: number; latencyMs: number;
   leftRelX: number; leftRelY: number; rightRelX: number; rightRelY: number;
   leftRelXRaw: number; leftRelYRaw: number; rightRelXRaw: number; rightRelYRaw: number;
-  binocularReliability: number;
-  leftConfidence: number; rightConfidence: number;
-  inferenceMs: number;
-  timestampMs: number;
+  binocularReliability: number; leftConfidence: number; rightConfidence: number; inferenceMs: number; timestampMs: number;
 }
 
 const MODEL_URL = "/OpenEyeTrack/models/gazeml_elg_i60x36_n32.onnx";
-const W = 60, H = 36;
-const LEFT_EYE = { inner: 362, outer: 263 };
-const RIGHT_EYE = { inner: 133, outer: 33 };
-
-type QueueJob = {
-  sequenceId:number;
-  acquisitionTimestampMs:number;
-  enqueuedAtMs:number;
-  cropPreprocessMs:number;
-  input:Float32Array;
-  resolve:(v:ElgEyeFeatures|null)=>void;
-  reject:(e:unknown)=>void;
-};
+const W=60,H=36,EYE_PIXELS=W*H,INPUT_PIXELS=2*EYE_PIXELS;
+const LEFT_EYE={inner:362,outer:263},RIGHT_EYE={inner:133,outer:33};
+type CropTiming={totalMs:number;geometryMs:number;canvasDrawMs:number;pixelReadMs:number;grayHistogramMs:number;cdfMs:number;equalizeNormalizeMs:number};
+type QueueJob={sequenceId:number;acquisitionTimestampMs:number;enqueuedAtMs:number;cropPreprocessMs:number;inputBufferAcquireMs:number;leftTiming:CropTiming;rightTiming:CropTiming;input:Float32Array;resolve:(v:ElgEyeFeatures|null)=>void;reject:(e:unknown)=>void};
 
 export class ElgEyeTracker {
-  private session: ort.InferenceSession | null = null;
-  private canvas = document.createElement("canvas");
-  private ctx: CanvasRenderingContext2D | null;
-  private lastRun = 0;
-  private readonly minIntervalMs = 33;
-  private history: ElgEyeFeatures[] = [];
-  private filtered: {leftRelX:number;leftRelY:number;rightRelX:number;rightRelY:number}|null = null;
-  private nextSequenceId = 1;
-  private queue: QueueJob[] = [];
-  private processing = false;
-  private drainWaiters: Array<()=>void> = [];
-  private backend: "webgpu" | "wasm" = "wasm";
-  private acquisitionMode: "queued" | "skip-while-busy" = "queued";
+  private session:ort.InferenceSession|null=null; private canvas=document.createElement("canvas"); private ctx:CanvasRenderingContext2D|null;
+  private lastRun=0; private readonly minIntervalMs=33; private history:ElgEyeFeatures[]=[]; private filtered:{leftRelX:number;leftRelY:number;rightRelX:number;rightRelY:number}|null=null;
+  private nextSequenceId=1; private queue:QueueJob[]=[]; private processing=false; private drainWaiters:Array<()=>void>=[];
+  private backend:"webgpu"|"wasm"="wasm"; private acquisitionMode:"queued"|"skip-while-busy"="queued";
+  // Reused scratch memory. Left and right preprocessing remains sequential, so one
+  // scratch set is safe and produces the same values as the previous allocations.
+  private readonly gray=new Uint8Array(EYE_PIXELS); private readonly hist=new Uint32Array(256); private readonly cdf=new Uint32Array(256);
+  // Each queued job must own its model input until ONNX completes. Recycle those
+  // arrays through a pool rather than sharing one mutable input across jobs.
+  private readonly inputPool:Float32Array[]=[];
 
-  constructor() {
-    this.canvas.width=W; this.canvas.height=H;
-    this.ctx=this.canvas.getContext("2d",{willReadFrequently:true});
-  }
+  constructor(){this.canvas.width=W;this.canvas.height=H;this.ctx=this.canvas.getContext("2d",{willReadFrequently:true});}
+  get activeBackend():"webgpu"|"wasm"{return this.backend;} get activeAcquisitionMode():"queued"|"skip-while-busy"{return this.acquisitionMode;}
+  setAcquisitionMode(mode:"queued"|"skip-while-busy"):void{this.acquisitionMode=mode;} reset():void{this.history=[];this.filtered=null;resetElgDiagnostics();}
+  get queueDepth():number{return this.queue.length+(this.processing?1:0);} async drain():Promise<void>{if(!this.processing&&this.queue.length===0)return;await new Promise<void>(resolve=>this.drainWaiters.push(resolve));}
+  private acquireInput():Float32Array{return this.inputPool.pop()??new Float32Array(INPUT_PIXELS);} private releaseInput(input:Float32Array):void{this.inputPool.push(input);}
 
-  get activeBackend(): "webgpu" | "wasm" { return this.backend; }
-  get activeAcquisitionMode(): "queued" | "skip-while-busy" { return this.acquisitionMode; }
-  setAcquisitionMode(mode:"queued"|"skip-while-busy"):void { this.acquisitionMode=mode; }
-  reset(): void { this.history = []; this.filtered = null; resetElgDiagnostics(); }
-  get queueDepth(): number { return this.queue.length + (this.processing ? 1 : 0); }
+  private stabilize(v:ElgEyeFeatures):ElgEyeFeatures{const raw={leftRelX:v.leftRelX,leftRelY:v.leftRelY,rightRelX:v.rightRelX,rightRelY:v.rightRelY};this.history.push(v);if(this.history.length>5)this.history.shift();if(!this.filtered){this.filtered={...raw};return{...v,...raw,leftRelXRaw:raw.leftRelX,leftRelYRaw:raw.leftRelY,rightRelXRaw:raw.rightRelX,rightRelYRaw:raw.rightRelY,binocularReliability:1};}const prev=this.filtered,dl={x:raw.leftRelX-prev.leftRelX,y:raw.leftRelY-prev.leftRelY},dr={x:raw.rightRelX-prev.rightRelX,y:raw.rightRelY-prev.rightRelY},magL=Math.hypot(dl.x,dl.y),magR=Math.hypot(dr.x,dr.y),dot=dl.x*dr.x+dl.y*dr.y,direction=(magL>1e-5&&magR>1e-5)?Math.max(0,dot/(magL*magR)):1,magnitudeAgreement=1-Math.min(1,Math.abs(magL-magR)/Math.max(.015,Math.max(magL,magR))),confidence=Math.max(0,Math.min(1,(v.leftConfidence+v.rightConfidence)/2)),binocularReliability=Math.max(0,Math.min(1,.45*direction+.35*magnitudeAgreement+.20*confidence)),jointMovement=(magL+magR)/2,movementGain=jointMovement<.012?.16:jointMovement<.03?.28:jointMovement<.065?.52:.82,alpha=Math.max(.08,Math.min(.90,movementGain*(.35+.65*binocularReliability))),imbalance=Math.max(.02,Math.max(magL,magR)),leftPenalty=magL>magR*1.8?Math.max(.2,1-(magL-magR)/imbalance):1,rightPenalty=magR>magL*1.8?Math.max(.2,1-(magR-magL)/imbalance):1,al=Math.max(.06,alpha*leftPenalty),ar=Math.max(.06,alpha*rightPenalty);this.filtered={leftRelX:prev.leftRelX+al*dl.x,leftRelY:prev.leftRelY+al*dl.y,rightRelX:prev.rightRelX+ar*dr.x,rightRelY:prev.rightRelY+ar*dr.y};return{...v,...this.filtered,leftRelXRaw:raw.leftRelX,leftRelYRaw:raw.leftRelY,rightRelXRaw:raw.rightRelX,rightRelYRaw:raw.rightRelY,binocularReliability};}
 
-  async drain(): Promise<void> {
-    if (!this.processing && this.queue.length === 0) return;
-    await new Promise<void>(resolve => this.drainWaiters.push(resolve));
-  }
+  async initialize():Promise<void>{if(this.session)return;resetElgDiagnostics();const timeout=<T>(p:Promise<T>)=>Promise.race([p,new Promise<never>((_,reject)=>window.setTimeout(()=>reject(new Error("ELG model loading timed out after 30 seconds.")),30000))]);this.session=await timeout(ort.InferenceSession.create(MODEL_URL,{executionProviders:["wasm"],graphOptimizationLevel:"all"}));this.backend="wasm";console.info("[OpenEyeTrack ELG] Using restored known-working WASM configuration");}
 
-  private stabilize(v: ElgEyeFeatures): ElgEyeFeatures {
-    const raw={leftRelX:v.leftRelX,leftRelY:v.leftRelY,rightRelX:v.rightRelX,rightRelY:v.rightRelY};
-    this.history.push(v); if(this.history.length>5)this.history.shift();
-    if(!this.filtered){this.filtered={...raw};return {...v,...raw,leftRelXRaw:raw.leftRelX,leftRelYRaw:raw.leftRelY,rightRelXRaw:raw.rightRelX,rightRelYRaw:raw.rightRelY,binocularReliability:1};}
-    const prev=this.filtered;
-    const dl={x:raw.leftRelX-prev.leftRelX,y:raw.leftRelY-prev.leftRelY};
-    const dr={x:raw.rightRelX-prev.rightRelX,y:raw.rightRelY-prev.rightRelY};
-    const magL=Math.hypot(dl.x,dl.y),magR=Math.hypot(dr.x,dr.y);
-    const dot=dl.x*dr.x+dl.y*dr.y, direction=(magL>1e-5&&magR>1e-5)?Math.max(0,dot/(magL*magR)):1;
-    const magnitudeAgreement=1-Math.min(1,Math.abs(magL-magR)/Math.max(.015,Math.max(magL,magR)));
-    const confidence=Math.max(0,Math.min(1,(v.leftConfidence+v.rightConfidence)/2));
-    const binocularReliability=Math.max(0,Math.min(1,.45*direction+.35*magnitudeAgreement+.20*confidence));
-    const jointMovement=(magL+magR)/2;
-    const movementGain=jointMovement<.012?.16:jointMovement<.03?.28:jointMovement<.065?.52:.82;
-    const alpha=Math.max(.08,Math.min(.90,movementGain*(.35+.65*binocularReliability)));
-    const imbalance=Math.max(.02,Math.max(magL,magR));
-    const leftPenalty=magL>magR*1.8?Math.max(.2,1-(magL-magR)/imbalance):1;
-    const rightPenalty=magR>magL*1.8?Math.max(.2,1-(magR-magL)/imbalance):1;
-    const al=Math.max(.06,alpha*leftPenalty),ar=Math.max(.06,alpha*rightPenalty);
-    this.filtered={leftRelX:prev.leftRelX+al*dl.x,leftRelY:prev.leftRelY+al*dl.y,rightRelX:prev.rightRelX+ar*dr.x,rightRelY:prev.rightRelY+ar*dr.y};
-    return {...v,...this.filtered,leftRelXRaw:raw.leftRelX,leftRelYRaw:raw.leftRelY,rightRelXRaw:raw.rightRelX,rightRelYRaw:raw.rightRelY,binocularReliability};
-  }
+  estimate(video:HTMLVideoElement,landmarks:NormalizedLandmark[],force=false):Promise<ElgEyeFeatures|null>{if(!this.session||video.videoWidth===0||landmarks.length<478)return Promise.resolve(null);if(this.acquisitionMode==="skip-while-busy"&&this.processing)return Promise.resolve(null);const now=performance.now();if(!force&&now-this.lastRun<this.minIntervalMs)return Promise.resolve(null);this.lastRun=now;const cropStartedMs=performance.now(),inputAcquireStartedMs=performance.now(),input=this.acquireInput(),inputBufferAcquireMs=performance.now()-inputAcquireStartedMs,leftTiming=this.cropEye(video,landmarks,LEFT_EYE,input,0),rightTiming=leftTiming?this.cropEye(video,landmarks,RIGHT_EYE,input,EYE_PIXELS):null;if(!leftTiming||!rightTiming){this.releaseInput(input);return Promise.resolve(null);}const enqueuedAtMs=performance.now(),cropPreprocessMs=enqueuedAtMs-cropStartedMs,sequenceId=this.nextSequenceId++,acquisitionTimestampMs=now;return new Promise<ElgEyeFeatures|null>((resolve,reject)=>{this.queue.push({sequenceId,acquisitionTimestampMs,enqueuedAtMs,cropPreprocessMs,inputBufferAcquireMs,leftTiming,rightTiming,input,resolve,reject});void this.processQueue();});}
 
-  async initialize(): Promise<void> {
-    if (this.session) return;
-    resetElgDiagnostics();
-    const timeout = <T>(p:Promise<T>) => Promise.race([p,new Promise<never>((_,reject)=>window.setTimeout(()=>reject(new Error("ELG model loading timed out after 30 seconds.")),30000))]);
-    this.session=await timeout(ort.InferenceSession.create(MODEL_URL,{executionProviders:["wasm"],graphOptimizationLevel:"all"}));
-    this.backend="wasm"; console.info("[OpenEyeTrack ELG] Using restored known-working WASM configuration");
-  }
+  private async processQueue():Promise<void>{if(this.processing||!this.session)return;this.processing=true;try{while(this.queue.length){const job=this.queue.shift()!,started=performance.now(),queueWaitMs=started-job.enqueuedAtMs;try{const tensorStartedMs=performance.now(),feeds:Record<string,ort.Tensor>={};feeds[this.session.inputNames[0]]=new ort.Tensor("float32",job.input,[2,H,W,1]);const tensorReadyMs=performance.now(),outputs=await this.session.run(feeds),inferenceEndedMs=performance.now(),decodeStartedMs=performance.now(),candidates=this.session.outputNames.map(name=>({name,tensor:outputs[name]})).filter((v):v is{name:string;tensor:ort.Tensor}=>Boolean(v.tensor));let decoded:{l:{x:number;y:number;confidence:number};r:{x:number;y:number;confidence:number}}|null=null;for(const{tensor}of candidates){if(!(tensor.data instanceof Float32Array))continue;const dims=tensor.dims.map(Number),l=decodeIris(tensor.data,dims,0),r=decodeIris(tensor.data,dims,1);if(l&&r){decoded={l,r};break;}}if(!decoded)throw new Error(`ELG model ran, but no output matched an 18-channel 60×36 heatmap. Outputs: ${candidates.map(({name,tensor})=>`${name} [${tensor.dims.join("×")}]`).join(", ")}`);const decodeEndedMs=performance.now(),processedTimestampMs=decodeEndedMs,{l,r}=decoded;updateElgDiagnostics({cropPreprocessMs:job.cropPreprocessMs,leftCropTotalMs:job.leftTiming.totalMs,rightCropTotalMs:job.rightTiming.totalMs,leftGeometryMs:job.leftTiming.geometryMs,rightGeometryMs:job.rightTiming.geometryMs,leftCanvasDrawMs:job.leftTiming.canvasDrawMs,rightCanvasDrawMs:job.rightTiming.canvasDrawMs,leftPixelReadMs:job.leftTiming.pixelReadMs,rightPixelReadMs:job.rightTiming.pixelReadMs,leftGrayHistogramMs:job.leftTiming.grayHistogramMs,rightGrayHistogramMs:job.rightTiming.grayHistogramMs,leftCdfMs:job.leftTiming.cdfMs,rightCdfMs:job.rightTiming.cdfMs,leftEqualizeNormalizeMs:job.leftTiming.equalizeNormalizeMs,rightEqualizeNormalizeMs:job.rightTiming.equalizeNormalizeMs,inputBufferAcquireMs:job.inputBufferAcquireMs,queueWaitMs,tensorSetupMs:tensorReadyMs-tensorStartedMs,onnxInferenceMs:inferenceEndedMs-tensorReadyMs,decodeMs:decodeEndedMs-decodeStartedMs,totalLatencyMs:processedTimestampMs-job.acquisitionTimestampMs,sequenceId:job.sequenceId});job.resolve(this.stabilize({sequenceId:job.sequenceId,acquisitionTimestampMs:job.acquisitionTimestampMs,processedTimestampMs,latencyMs:processedTimestampMs-job.acquisitionTimestampMs,leftRelX:l.x,leftRelY:l.y,rightRelX:r.x,rightRelY:r.y,leftRelXRaw:l.x,leftRelYRaw:l.y,rightRelXRaw:r.x,rightRelYRaw:r.y,binocularReliability:1,leftConfidence:l.confidence,rightConfidence:r.confidence,inferenceMs:processedTimestampMs-started,timestampMs:job.acquisitionTimestampMs}));}catch(e){job.reject(e);}finally{this.releaseInput(job.input);}}}finally{this.processing=false;if(this.queue.length===0){const waiters=this.drainWaiters.splice(0);for(const resolve of waiters)resolve();}else void this.processQueue();}}
 
-  estimate(video: HTMLVideoElement, landmarks: NormalizedLandmark[], force=false): Promise<ElgEyeFeatures | null> {
-    if (!this.session || video.videoWidth === 0 || landmarks.length < 478) return Promise.resolve(null);
-    if (this.acquisitionMode==="skip-while-busy" && this.processing) return Promise.resolve(null);
-    const now = performance.now();
-    if (!force && now - this.lastRun < this.minIntervalMs) return Promise.resolve(null);
-    this.lastRun = now;
-    const cropStartedMs=performance.now();
-    const left = this.cropEye(video, landmarks, LEFT_EYE);
-    const right = this.cropEye(video, landmarks, RIGHT_EYE);
-    if (!left || !right) return Promise.resolve(null);
-    const input = new Float32Array(2 * H * W);
-    input.set(left, 0); input.set(right, H * W);
-    const enqueuedAtMs=performance.now();
-    const cropPreprocessMs=enqueuedAtMs-cropStartedMs;
-    const sequenceId=this.nextSequenceId++, acquisitionTimestampMs=now;
-    return new Promise<ElgEyeFeatures|null>((resolve,reject)=>{
-      this.queue.push({sequenceId,acquisitionTimestampMs,enqueuedAtMs,cropPreprocessMs,input,resolve,reject});
-      void this.processQueue();
-    });
-  }
-
-  private async processQueue(): Promise<void> {
-    if (this.processing || !this.session) return;
-    this.processing=true;
-    try {
-      while(this.queue.length){
-        const job=this.queue.shift()!;
-        const started=performance.now();
-        const queueWaitMs=started-job.enqueuedAtMs;
-        try{
-          const tensorStartedMs=performance.now();
-          const feeds:Record<string,ort.Tensor>={};
-          feeds[this.session.inputNames[0]]=new ort.Tensor("float32",job.input,[2,H,W,1]);
-          const tensorReadyMs=performance.now();
-          const outputs=await this.session.run(feeds);
-          const inferenceEndedMs=performance.now();
-          const decodeStartedMs=performance.now();
-          const candidates=this.session.outputNames.map(name=>({name,tensor:outputs[name]})).filter((v):v is {name:string;tensor:ort.Tensor}=>Boolean(v.tensor));
-          let decoded:{l:{x:number;y:number;confidence:number};r:{x:number;y:number;confidence:number}}|null=null;
-          for(const {tensor} of candidates){if(!(tensor.data instanceof Float32Array))continue;const dims=tensor.dims.map(Number);const l=decodeIris(tensor.data,dims,0),r=decodeIris(tensor.data,dims,1);if(l&&r){decoded={l,r};break;}}
-          if(!decoded)throw new Error(`ELG model ran, but no output matched an 18-channel 60×36 heatmap. Outputs: ${candidates.map(({name,tensor})=>`${name} [${tensor.dims.join("×")}]`).join(", ")}`);
-          const decodeEndedMs=performance.now();
-          const processedTimestampMs=decodeEndedMs,{l,r}=decoded;
-          updateElgDiagnostics({
-            cropPreprocessMs:job.cropPreprocessMs,
-            queueWaitMs,
-            tensorSetupMs:tensorReadyMs-tensorStartedMs,
-            onnxInferenceMs:inferenceEndedMs-tensorReadyMs,
-            decodeMs:decodeEndedMs-decodeStartedMs,
-            totalLatencyMs:processedTimestampMs-job.acquisitionTimestampMs,
-            sequenceId:job.sequenceId
-          });
-          job.resolve(this.stabilize({sequenceId:job.sequenceId,acquisitionTimestampMs:job.acquisitionTimestampMs,processedTimestampMs,latencyMs:processedTimestampMs-job.acquisitionTimestampMs,leftRelX:l.x,leftRelY:l.y,rightRelX:r.x,rightRelY:r.y,leftRelXRaw:l.x,leftRelYRaw:l.y,rightRelXRaw:r.x,rightRelYRaw:r.y,binocularReliability:1,leftConfidence:l.confidence,rightConfidence:r.confidence,inferenceMs:processedTimestampMs-started,timestampMs:job.acquisitionTimestampMs}));
-        }catch(e){job.reject(e);}
-      }
-    }finally{
-      this.processing=false;
-      if(this.queue.length===0){const waiters=this.drainWaiters.splice(0);for(const resolve of waiters)resolve();}
-      else void this.processQueue();
-    }
-  }
-
-  private cropEye(video: HTMLVideoElement, landmarks: NormalizedLandmark[], eye:{inner:number;outer:number}): Float32Array | null {
-    const a=landmarks[eye.inner], b=landmarks[eye.outer];
-    const ax=a.x*video.videoWidth, ay=a.y*video.videoHeight, bx=b.x*video.videoWidth, by=b.y*video.videoHeight;
-    const cx=(ax+bx)/2, cy=(ay+by)/2;
-    const cornerDistance=Math.hypot(ax-bx,ay-by);
-    if(cornerDistance<12)return null;
-    const angle=Math.atan2(by-ay,bx-ax);
-    const cropW=cornerDistance*1.8, cropH=cropW*H/W;
-    const ctx=this.ctx;if(!ctx)return null;
-    ctx.save();ctx.clearRect(0,0,W,H);ctx.translate(W/2,H/2);ctx.scale(W/cropW,H/cropH);ctx.rotate(-angle);ctx.translate(-cx,-cy);ctx.drawImage(video,0,0);ctx.restore();
-    const rgba=ctx.getImageData(0,0,W,H).data, gray=new Uint8Array(W*H),hist=new Uint32Array(256);
-    for(let i=0;i<gray.length;i++){const g=Math.round(.299*rgba[i*4]+.587*rgba[i*4+1]+.114*rgba[i*4+2]);gray[i]=g;hist[g]++;}
-    const cdf=new Uint32Array(256);let total=0,cdfMin=0;for(let i=0;i<256;i++){total+=hist[i];cdf[i]=total;if(!cdfMin&&hist[i])cdfMin=total;}
-    const out=new Float32Array(W*H),den=Math.max(1,total-cdfMin);
-    for(let i=0;i<gray.length;i++){const eq=Math.round((cdf[gray[i]]-cdfMin)*255/den);out[i]=eq/127.5-1;}
-    return out;
-  }
+  private cropEye(video:HTMLVideoElement,landmarks:NormalizedLandmark[],eye:{inner:number;outer:number},out:Float32Array,offset:number):CropTiming|null{const totalStarted=performance.now(),geometryStarted=performance.now(),a=landmarks[eye.inner],b=landmarks[eye.outer],ax=a.x*video.videoWidth,ay=a.y*video.videoHeight,bx=b.x*video.videoWidth,by=b.y*video.videoHeight,cx=(ax+bx)/2,cy=(ay+by)/2,cornerDistance=Math.hypot(ax-bx,ay-by);if(cornerDistance<12)return null;const angle=Math.atan2(by-ay,bx-ax),cropW=cornerDistance*1.8,cropH=cropW*H/W,geometryMs=performance.now()-geometryStarted,ctx=this.ctx;if(!ctx)return null;const drawStarted=performance.now();ctx.save();ctx.clearRect(0,0,W,H);ctx.translate(W/2,H/2);ctx.scale(W/cropW,H/cropH);ctx.rotate(-angle);ctx.translate(-cx,-cy);ctx.drawImage(video,0,0);ctx.restore();const canvasDrawMs=performance.now()-drawStarted,readStarted=performance.now(),rgba=ctx.getImageData(0,0,W,H).data,pixelReadMs=performance.now()-readStarted,grayHistogramStarted=performance.now();this.hist.fill(0);for(let i=0;i<EYE_PIXELS;i++){const g=Math.round(.299*rgba[i*4]+.587*rgba[i*4+1]+.114*rgba[i*4+2]);this.gray[i]=g;this.hist[g]++;}const grayHistogramMs=performance.now()-grayHistogramStarted,cdfStarted=performance.now();let total=0,cdfMin=0;for(let i=0;i<256;i++){total+=this.hist[i];this.cdf[i]=total;if(!cdfMin&&this.hist[i])cdfMin=total;}const cdfMs=performance.now()-cdfStarted,equalizeStarted=performance.now(),den=Math.max(1,total-cdfMin);for(let i=0;i<EYE_PIXELS;i++){const eq=Math.round((this.cdf[this.gray[i]]-cdfMin)*255/den);out[offset+i]=eq/127.5-1;}const equalizeNormalizeMs=performance.now()-equalizeStarted;return{totalMs:performance.now()-totalStarted,geometryMs,canvasDrawMs,pixelReadMs,grayHistogramMs,cdfMs,equalizeNormalizeMs};}
 }
 
-function decodeIris(data:Float32Array,dims:number[],batch:number):{x:number;y:number;confidence:number}|null{
-  if(dims.length!==4||dims[0]<2)return null;
-  const nhwc=dims[1]===H&&dims[2]===W;
-  const nchw=dims[2]===H&&dims[3]===W;
-  if(!nhwc&&!nchw)return null;
-  const channels=nhwc?dims[3]:dims[1];
-  if(channels<16)return null;
-  const at=(c:number,x:number,y:number)=>data[nhwc?(((batch*H+y)*W+x)*channels+c):(((batch*channels+c)*H+y)*W+x)];
-  let sx=0,sy=0,sc=0,n=0;
-  for(let c=8;c<16;c++){
-    let best=-Infinity,bx=0,by=0;
-    for(let y=0;y<H;y++)for(let x=0;x<W;x++){const v=at(c,x,y);if(v>best){best=v;bx=x;by=y;}}
-    if(!Number.isFinite(best))continue;
-    let wx=0,wy=0,ws=0;
-    const radius=2, floor=Math.max(0,best*0.35);
-    for(let y=Math.max(0,by-radius);y<=Math.min(H-1,by+radius);y++)for(let x=Math.max(0,bx-radius);x<=Math.min(W-1,bx+radius);x++){
-      const w=Math.max(0,at(c,x,y)-floor);wx+=x*w;wy+=y*w;ws+=w;
-    }
-    const px=ws>1e-8?wx/ws:bx,py=ws>1e-8?wy/ws:by;
-    sx+=px/(W-1);sy+=py/(H-1);sc+=best;n++;
-  }
-  return n?{x:sx/n,y:sy/n,confidence:sc/n}:null;
-}
+function decodeIris(data:Float32Array,dims:number[],batch:number):{x:number;y:number;confidence:number}|null{if(dims.length!==4||dims[0]<2)return null;const nhwc=dims[1]===H&&dims[2]===W,nchw=dims[2]===H&&dims[3]===W;if(!nhwc&&!nchw)return null;const channels=nhwc?dims[3]:dims[1];if(channels<16)return null;const at=(c:number,x:number,y:number)=>data[nhwc?(((batch*H+y)*W+x)*channels+c):(((batch*channels+c)*H+y)*W+x)];let sx=0,sy=0,sc=0,n=0;for(let c=8;c<16;c++){let best=-Infinity,bx=0,by=0;for(let y=0;y<H;y++)for(let x=0;x<W;x++){const v=at(c,x,y);if(v>best){best=v;bx=x;by=y;}}if(!Number.isFinite(best))continue;let wx=0,wy=0,ws=0;const radius=2,floor=Math.max(0,best*.35);for(let y=Math.max(0,by-radius);y<=Math.min(H-1,by+radius);y++)for(let x=Math.max(0,bx-radius);x<=Math.min(W-1,bx+radius);x++){const w=Math.max(0,at(c,x,y)-floor);wx+=x*w;wy+=y*w;ws+=w;}const px=ws>1e-8?wx/ws:bx,py=ws>1e-8?wy/ws:by;sx+=px/(W-1);sy+=py/(H-1);sc+=best;n++;}return n?{x:sx/n,y:sy/n,confidence:sc/n}:null;}
