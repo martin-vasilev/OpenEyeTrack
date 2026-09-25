@@ -13,6 +13,9 @@ export interface FaceFeatures {
 export class FaceFeatureTracker {
   private landmarker: FaceLandmarker | null = null;
   private lastVideoTime = -1;
+  private cameraFrameCount = 0;
+  private lastResult: FaceLandmarkerResult | null = null;
+  private readonly mediaPipeFrameStride = 2;
 
   async initialize(): Promise<void> {
     const vision = await FilesetResolver.forVisionTasks(
@@ -33,17 +36,38 @@ export class FaceFeatureTracker {
       minFacePresenceConfidence: 0.5,
       minTrackingConfidence: 0.5
     });
+
+    this.lastVideoTime = -1;
+    this.cameraFrameCount = 0;
+    this.lastResult = null;
   }
 
   detect(video: HTMLVideoElement, timestampMs: number): FaceLandmarkerResult | null {
     if (!this.landmarker || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return null;
     if (video.currentTime === this.lastVideoTime) return null;
+
     this.lastVideoTime = video.currentTime;
-    return this.landmarker.detectForVideo(video, timestampMs);
+    const frameIndex = this.cameraFrameCount++;
+
+    // Experimental half-rate MediaPipe mode:
+    // run the expensive face-landmarker inference on every second unique camera
+    // frame (~15 Hz for a 30-Hz webcam). On the intervening frame, reuse the
+    // most recent face landmarks so the downstream ELG/gaze pipeline can still
+    // acquire/process that camera frame rather than being throttled to 15 Hz.
+    const shouldRunMediaPipe =
+      this.lastResult === null || frameIndex % this.mediaPipeFrameStride === 0;
+
+    if (!shouldRunMediaPipe) return this.lastResult;
+
+    this.lastResult = this.landmarker.detectForVideo(video, timestampMs);
+    return this.lastResult;
   }
 
   close(): void {
     this.landmarker?.close();
     this.landmarker = null;
+    this.lastVideoTime = -1;
+    this.cameraFrameCount = 0;
+    this.lastResult = null;
   }
 }
