@@ -24,36 +24,19 @@ export interface EyeTrackingSample {
   calibrationHeadZ: number | null; calibrationHeadZSd: number | null; calibrationHeadYaw: number | null; calibrationHeadYawSd: number | null;
   calibrationHeadPitch: number | null; calibrationHeadPitchSd: number | null; calibrationHeadRoll: number | null; calibrationHeadRollSd: number | null;
 
-  // Optional developer diagnostics. These keys are omitted entirely from
-  // normal recordings and included only when "Record full developer diagnostics" is enabled.
-  cameraTrackFps?: number | null;
-  videoCallbackIntervalMs?: number | null;
-  videoPresentedFrameDelta?: number | null;
-  videoMissedPresentedFramesTotal?: number;
-  pipelineTotalMs?: number | null;
-  mediaPipeDispatchToBitmapMs?: number | null;
-  mediaPipeBitmapToPostMs?: number | null;
-  mediaPipeWorkerQueueMs?: number | null;
-  mediaPipeWorkerInferenceMs?: number | null;
-  mediaPipeWorkerReturnMs?: number | null;
-  mediaPipeEndToEndMs?: number | null;
-  mediaPipeResultAgeMs?: number | null;
-  mediaPipeSequenceId?: number | null;
-  elgEnqueueMs?: number | null;
-  featureExtractionMs?: number | null;
-  gazePredictionMs?: number | null;
-  overlayRenderMs?: number | null;
-  elgAcquisitionMode?: string | null;
-  elgInferenceMs?: number | null;
-  elgAgeMs?: number | null;
-  elgSequenceId?: number | null;
-  elgAcquisitionTimestampMs?: number | null;
-  elgProcessedTimestampMs?: number | null;
-  elgLatencyMs?: number | null;
-  elgQueueDepth?: number | null;
-  elgCropPreprocessMs?: number | null;
-  elgQueueWaitMs?: number | null;
-  elgTensorSetupMs?: number | null;
-  elgOnnxInferenceMs?: number | null;
-  elgDecodeMs?: number | null;
+  // Optional developer diagnostics. These keys are omitted entirely from normal recordings.
+  cameraTrackFps?: number | null; videoCallbackIntervalMs?: number | null; videoPresentedFrameDelta?: number | null; videoMissedPresentedFramesTotal?: number;
+  pipelineTotalMs?: number | null; mediaPipeDispatchToBitmapMs?: number | null; mediaPipeBitmapToPostMs?: number | null; mediaPipeWorkerQueueMs?: number | null;
+  mediaPipeWorkerInferenceMs?: number | null; mediaPipeWorkerReturnMs?: number | null; mediaPipeEndToEndMs?: number | null; mediaPipeResultAgeMs?: number | null; mediaPipeSequenceId?: number | null;
+  elgEnqueueMs?: number | null; featureExtractionMs?: number | null; gazePredictionMs?: number | null; overlayRenderMs?: number | null; elgAcquisitionMode?: string | null;
+  elgInferenceMs?: number | null; elgAgeMs?: number | null; elgSequenceId?: number | null; elgAcquisitionTimestampMs?: number | null; elgProcessedTimestampMs?: number | null;
+  elgLatencyMs?: number | null; elgQueueDepth?: number | null; elgCropPreprocessMs?: number | null; elgQueueWaitMs?: number | null; elgTensorSetupMs?: number | null; elgOnnxInferenceMs?: number | null; elgDecodeMs?: number | null;
+  elgLeftCropTotalMs?: number | null; elgRightCropTotalMs?: number | null;
+  elgLeftGeometryMs?: number | null; elgRightGeometryMs?: number | null;
+  elgLeftCanvasDrawMs?: number | null; elgRightCanvasDrawMs?: number | null;
+  elgLeftPixelReadMs?: number | null; elgRightPixelReadMs?: number | null;
+  elgLeftGrayHistogramMs?: number | null; elgRightGrayHistogramMs?: number | null;
+  elgLeftCdfMs?: number | null; elgRightCdfMs?: number | null;
+  elgLeftEqualizeNormalizeMs?: number | null; elgRightEqualizeNormalizeMs?: number | null;
+  elgInputBufferAcquireMs?: number | null;
 }
