@@ -10,8 +10,13 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const message = event.data;
   try {
     if (message.type === "initialize") {
+      // This worker is emitted by Vite as an ES module worker. MediaPipe's
+      // legacy WASM loader relies on importScripts(), which is unavailable in
+      // module workers and can fail with "ModuleFactory not set". Request the
+      // ES-module WASM loader explicitly instead.
       const vision = await FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304/wasm"
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304/wasm",
+        true
       );
       landmarker = await FaceLandmarker.createFromOptions(vision, {
         baseOptions: {
