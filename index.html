@@ -11,11 +11,24 @@
 </head>
 <body>
   <main id="app"></main>
-  <div id="dev-build-badge" title="OpenEyeTrack development build">DEV v0.2.2 · worker timing fix</div>
+  <div id="dev-build-badge" title="OpenEyeTrack development build">DEV v0.2.3 · diagnostics cleanup</div>
   <script type="module" src="/src/main.ts"></script>
   <script type="module">
     const label = document.querySelector("header .eyebrow");
-    if (label) label.innerHTML = 'OpenEyeTrack browser demo · <strong>DEV v0.2.2</strong> · worker timing fix';
+    if (label) label.innerHTML = 'OpenEyeTrack browser demo · <strong>DEV v0.2.3</strong> · diagnostics cleanup';
+
+    const settings = document.querySelector('.research-settings');
+    if (settings && !document.querySelector('#record-dev-diagnostics')) {
+      const heading = document.createElement('h3');
+      heading.textContent = 'Developer recording';
+      const toggle = document.createElement('label');
+      toggle.className = 'toggle';
+      toggle.innerHTML = '<input id="record-dev-diagnostics" type="checkbox" /> Record full developer diagnostics (component timings and internal timestamps)';
+      const note = document.createElement('p');
+      note.className = 'muted';
+      note.textContent = 'Off by default. Enable for performance benchmarking; normal recordings omit internal timing columns.';
+      settings.append(heading, toggle, note);
+    }
   </script>
 </body>
 </html>
