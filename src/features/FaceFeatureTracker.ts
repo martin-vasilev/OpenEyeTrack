@@ -1,4 +1,5 @@
 import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
+import { resetMediaPipeDiagnostics, updateMediaPipeDiagnostics } from "./MediaPipeDiagnostics";
 
 export interface FaceFeatures {
   landmarks: NormalizedLandmark[];
@@ -7,29 +8,26 @@ export interface FaceFeatures {
 
 interface CachedFaceResult {
   faceLandmarks: NormalizedLandmark[][];
-  facialTransformationMatrixes: Array<{
-    rows: number;
-    columns: number;
-    data: number[];
-  }>;
+  facialTransformationMatrixes: Array<{ rows: number; columns: number; data: number[] }>;
 }
 
 type WorkerResponse =
   | { type: "initialized" }
   | {
       type: "result";
+      sequenceId: number;
+      dispatchStartedMs: number;
+      postedAtMs: number;
+      workerReceivedMs: number;
+      workerStartedMs: number;
+      workerEndedMs: number;
+      workerSentMs: number;
       inferenceMs: number;
       faceLandmarks: NormalizedLandmark[][];
       facialTransformationMatrixes: CachedFaceResult["facialTransformationMatrixes"];
     }
   | { type: "error"; message: string };
 
-/**
- * Face landmarks are deliberately decoupled from the per-camera-frame gaze
- * pipeline. MediaPipe runs at ~15 Hz in a Web Worker; detect() immediately
- * returns the newest completed landmark result so ELG can continue consuming
- * camera frames without waiting for synchronous face inference.
- */
 export class FaceFeatureTracker {
   private worker: Worker | null = null;
   private initialized = false;
@@ -42,20 +40,18 @@ export class FaceFeatureTracker {
   private lastVideoTime = -1;
   private readonly mediaPipeIntervalMs = 1000 / 15;
   private lastInferenceMs: number | null = null;
+  private sequenceId = 0;
+  private bitmapReadyBySequence = new Map<number, number>();
 
   async initialize(): Promise<void> {
     if (this.initialized) return;
     if (this.initializePromise) return this.initializePromise;
-
-    this.worker = new Worker(new URL("./FaceLandmarker.worker.ts", import.meta.url), {
-      type: "module"
-    });
-
+    resetMediaPipeDiagnostics();
+    this.worker = new Worker(new URL("./FaceLandmarker.worker.ts", import.meta.url), { type: "module" });
     this.initializePromise = new Promise<void>((resolve, reject) => {
       this.resolveInitialize = resolve;
       this.rejectInitialize = reject;
     });
-
     this.worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
       const message = event.data;
       if (message.type === "initialized") {
@@ -66,11 +62,21 @@ export class FaceFeatureTracker {
         return;
       }
       if (message.type === "result") {
-        this.latestResult = {
-          faceLandmarks: message.faceLandmarks,
-          facialTransformationMatrixes: message.facialTransformationMatrixes
-        };
+        const receivedAtMs = performance.now();
+        this.latestResult = { faceLandmarks: message.faceLandmarks, facialTransformationMatrixes: message.facialTransformationMatrixes };
         this.lastInferenceMs = message.inferenceMs;
+        const bitmapReadyMs = this.bitmapReadyBySequence.get(message.sequenceId) ?? message.postedAtMs;
+        this.bitmapReadyBySequence.delete(message.sequenceId);
+        updateMediaPipeDiagnostics({
+          dispatchToBitmapMs: bitmapReadyMs - message.dispatchStartedMs,
+          bitmapToPostMs: message.postedAtMs - bitmapReadyMs,
+          workerQueueMs: message.workerStartedMs - message.postedAtMs,
+          workerInferenceMs: message.inferenceMs,
+          workerReturnMs: receivedAtMs - message.workerSentMs,
+          endToEndMs: receivedAtMs - message.dispatchStartedMs,
+          resultAgeMs: 0,
+          sequenceId: message.sequenceId
+        });
         this.detectionInFlight = false;
         return;
       }
@@ -83,7 +89,6 @@ export class FaceFeatureTracker {
         this.initializePromise = null;
       }
     };
-
     this.worker.onerror = event => {
       this.detectionInFlight = false;
       const error = new Error(event.message || "MediaPipe worker failed.");
@@ -92,22 +97,14 @@ export class FaceFeatureTracker {
         this.resolveInitialize = null;
         this.rejectInitialize = null;
         this.initializePromise = null;
-      } else {
-        console.error("[OpenEyeTrack MediaPipe worker]", error);
-      }
+      } else console.error("[OpenEyeTrack MediaPipe worker]", error);
     };
-
     this.worker.postMessage({ type: "initialize" });
     return this.initializePromise;
   }
 
   detect(video: HTMLVideoElement, _timestampMs: number): CachedFaceResult | null {
-    if (!this.worker || !this.initialized || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-      return this.latestResult;
-    }
-
-    // main.ts already ignores duplicate camera frames, but retain this guard so
-    // FaceFeatureTracker remains safe when used independently.
+    if (!this.worker || !this.initialized || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return this.latestResult;
     const videoTime = video.currentTime;
     if (videoTime !== this.lastVideoTime) {
       this.lastVideoTime = videoTime;
@@ -115,20 +112,17 @@ export class FaceFeatureTracker {
       if (!this.detectionInFlight && now - this.lastDispatchMs >= this.mediaPipeIntervalMs) {
         this.detectionInFlight = true;
         this.lastDispatchMs = now;
-
-        // createImageBitmap is asynchronous: acquiring the frame does not wait
-        // for MediaPipe inference. The bitmap itself is transferred to the worker.
+        const sequenceId = ++this.sequenceId;
+        const dispatchStartedMs = performance.now();
         void createImageBitmap(video)
           .then(bitmap => {
+            const bitmapReadyMs = performance.now();
+            this.bitmapReadyBySequence.set(sequenceId, bitmapReadyMs);
             if (!this.worker || !this.initialized) {
-              bitmap.close();
-              this.detectionInFlight = false;
-              return;
+              bitmap.close(); this.detectionInFlight = false; return;
             }
-            this.worker.postMessage(
-              { type: "detect", bitmap, timestampMs: now },
-              [bitmap]
-            );
+            const postedAtMs = performance.now();
+            this.worker.postMessage({ type: "detect", bitmap, timestampMs: now, sequenceId, postedAtMs, dispatchStartedMs }, [bitmap]);
           })
           .catch(error => {
             this.detectionInFlight = false;
@@ -136,25 +130,17 @@ export class FaceFeatureTracker {
           });
       }
     }
-
     return this.latestResult;
   }
 
-  getLastInferenceMs(): number | null {
-    return this.lastInferenceMs;
-  }
+  getLastInferenceMs(): number | null { return this.lastInferenceMs; }
 
   close(): void {
     this.worker?.terminate();
-    this.worker = null;
-    this.initialized = false;
-    this.initializePromise = null;
-    this.resolveInitialize = null;
-    this.rejectInitialize = null;
-    this.latestResult = null;
-    this.detectionInFlight = false;
-    this.lastDispatchMs = -Infinity;
-    this.lastVideoTime = -1;
-    this.lastInferenceMs = null;
+    this.worker = null; this.initialized = false; this.initializePromise = null;
+    this.resolveInitialize = null; this.rejectInitialize = null; this.latestResult = null;
+    this.detectionInFlight = false; this.lastDispatchMs = -Infinity; this.lastVideoTime = -1;
+    this.lastInferenceMs = null; this.sequenceId = 0; this.bitmapReadyBySequence.clear();
+    resetMediaPipeDiagnostics();
   }
 }
