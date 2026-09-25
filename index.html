@@ -11,11 +11,11 @@
 </head>
 <body>
   <main id="app"></main>
-  <div id="dev-build-badge" title="OpenEyeTrack development build">DEV v0.2.4 · ELG buffer reuse + crop diagnostics</div>
+  <div id="dev-build-badge" title="OpenEyeTrack development build">DEV v0.2.5 · alternating eye-order test</div>
   <script type="module" src="/src/main.ts"></script>
   <script type="module">
     const label = document.querySelector("header .eyebrow");
-    if (label) label.innerHTML = 'OpenEyeTrack browser demo · <strong>DEV v0.2.4</strong> · ELG buffer reuse + crop diagnostics';
+    if (label) label.innerHTML = 'OpenEyeTrack browser demo · <strong>DEV v0.2.5</strong> · alternating eye-order test';
 
     const settings = document.querySelector('.research-settings');
     if (settings && !document.querySelector('#record-dev-diagnostics')) {
