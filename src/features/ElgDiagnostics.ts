@@ -1,5 +1,6 @@
 export interface ElgDiagnostics {
   cropPreprocessMs: number | null;
+  firstEye: "left" | "right" | null;
   leftCropTotalMs: number | null;
   rightCropTotalMs: number | null;
   leftGeometryMs: number | null;
@@ -25,6 +26,7 @@ export interface ElgDiagnostics {
 
 const empty = (): ElgDiagnostics => ({
   cropPreprocessMs: null,
+  firstEye: null,
   leftCropTotalMs: null,
   rightCropTotalMs: null,
   leftGeometryMs: null,
