@@ -11,7 +11,11 @@
 </head>
 <body>
   <main id="app"></main>
-  <div id="dev-build-badge" title="OpenEyeTrack development build">DEV v0.2.0 · timing instrumentation</div>
+  <div id="dev-build-badge" title="OpenEyeTrack development build">DEV v0.2.1 · MediaPipe worker fix</div>
   <script type="module" src="/src/main.ts"></script>
+  <script type="module">
+    const label = document.querySelector("header .eyebrow");
+    if (label) label.innerHTML = 'OpenEyeTrack browser demo · <strong>DEV v0.2.1</strong> · MediaPipe worker fix';
+  </script>
 </body>
 </html>
