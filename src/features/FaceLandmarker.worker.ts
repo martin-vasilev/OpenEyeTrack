@@ -4,7 +4,7 @@ let landmarker: FaceLandmarker | null = null;
 
 type WorkerRequest =
   | { type: "initialize" }
-  | { type: "detect"; bitmap: ImageBitmap; timestampMs: number };
+  | { type: "detect"; bitmap: ImageBitmap; timestampMs: number; sequenceId: number; postedAtMs: number; dispatchStartedMs: number };
 
 self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const message = event.data;
@@ -17,8 +17,6 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         baseOptions: {
           modelAssetPath:
             "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task",
-          // Keep MediaPipe off the main thread and avoid competing with the
-          // ELG/WebGPU path for the page's GPU context.
           delegate: "CPU"
         },
         runningMode: "VIDEO",
@@ -35,15 +33,23 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
     if (!landmarker) throw new Error("Face landmarker worker is not initialized.");
 
+    const workerReceivedMs = performance.now();
     const started = performance.now();
     const result = landmarker.detectForVideo(message.bitmap, message.timestampMs);
-    const inferenceMs = performance.now() - started;
+    const inferenceEndedMs = performance.now();
+    const inferenceMs = inferenceEndedMs - started;
     message.bitmap.close();
+    const workerSentMs = performance.now();
 
-    // Send only the fields consumed by the main pipeline. Converting the
-    // matrices to plain arrays makes the payload reliably structured-cloneable.
     self.postMessage({
       type: "result",
+      sequenceId: message.sequenceId,
+      dispatchStartedMs: message.dispatchStartedMs,
+      postedAtMs: message.postedAtMs,
+      workerReceivedMs,
+      workerStartedMs: started,
+      workerEndedMs: inferenceEndedMs,
+      workerSentMs,
       inferenceMs,
       faceLandmarks: result.faceLandmarks,
       facialTransformationMatrixes: result.facialTransformationMatrixes?.map(matrix => ({
