@@ -56,12 +56,15 @@ jobs:
         run: |
           npm install
           npm run typecheck
-          mkdir -p public/models public/ort
+          mkdir -p public/models public/ort public/mediapipe/wasm
           curl -L --fail --retry 3 -o public/models/gazeml_elg_i60x36_n32.onnx https://storage.googleapis.com/ailia-models/gazeml/gazeml_elg_i60x36_n32.onnx
           curl -L --fail --retry 3 -o public/models/mobileone_s0_gaze.onnx https://github.com/yakhyo/gaze-estimation/releases/download/weights/mobileone_s0_gaze.onnx
           curl -L --fail --retry 3 -o public/models/resnet34_gaze.onnx https://github.com/yakhyo/gaze-estimation/releases/download/weights/resnet34_gaze.onnx
           cp node_modules/onnxruntime-web/dist/ort-wasm*.wasm public/ort/
           cp node_modules/onnxruntime-web/dist/ort-wasm*.mjs public/ort/
+          cp -R node_modules/@mediapipe/tasks-vision/wasm/. public/mediapipe/wasm/
+          test -f public/mediapipe/wasm/vision_wasm_module_internal.js
+          test -f public/mediapipe/wasm/vision_wasm_module_internal.wasm
           npm run build -- --base=/OpenEyeTrack/dev/
 
       - name: Combine stable and dev sites
