@@ -10,7 +10,11 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const message = event.data;
   try {
     if (message.type === "initialize") {
-      const wasmPath = `${import.meta.env.BASE_URL}mediapipe/wasm`;
+      // Resolve from the deployed worker URL rather than import.meta.env.
+      // In the dev preview the worker is under /OpenEyeTrack/dev/assets/, so
+      // ../mediapipe/wasm resolves to /OpenEyeTrack/dev/mediapipe/wasm.
+      // The same relative rule also works for the root/main deployment.
+      const wasmPath = new URL("../mediapipe/wasm/", self.location.href).href.replace(/\/$/, "");
       const vision = await FilesetResolver.forVisionTasks(wasmPath, true);
       landmarker = await FaceLandmarker.createFromOptions(vision, {
         baseOptions: {
