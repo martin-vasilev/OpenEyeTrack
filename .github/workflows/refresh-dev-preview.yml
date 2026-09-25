@@ -1,0 +1,18 @@
+name: Refresh dev preview
+
+on:
+  push:
+    branches: [dev]
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  request-pages-refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch protected Pages workflow on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy-pages.yml --repo "${{ github.repository }}" --ref main
