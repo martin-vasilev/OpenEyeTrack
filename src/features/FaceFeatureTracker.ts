@@ -67,13 +67,31 @@ export class FaceFeatureTracker {
         this.lastInferenceMs = message.inferenceMs;
         const bitmapReadyMs = this.bitmapReadyBySequence.get(message.sequenceId) ?? message.postedAtMs;
         this.bitmapReadyBySequence.delete(message.sequenceId);
+
+        // Do not subtract performance.now() values from different execution
+        // contexts: the page and worker can have different time origins.
+        // Durations wholly within one context are safe. The worker queue is
+        // measured entirely on the worker clock. Worker->main return latency
+        // is the residual of the main-thread end-to-end duration after
+        // subtracting the main-thread pre-post stages and worker-local stages.
+        const dispatchToBitmapMs = bitmapReadyMs - message.dispatchStartedMs;
+        const bitmapToPostMs = message.postedAtMs - bitmapReadyMs;
+        const workerQueueMs = message.workerStartedMs - message.workerReceivedMs;
+        const workerInferenceMs = message.inferenceMs;
+        const workerPostInferenceMs = message.workerSentMs - message.workerEndedMs;
+        const endToEndMs = receivedAtMs - message.dispatchStartedMs;
+        const workerReturnMs = Math.max(
+          0,
+          endToEndMs - dispatchToBitmapMs - bitmapToPostMs - workerQueueMs - workerInferenceMs - workerPostInferenceMs
+        );
+
         updateMediaPipeDiagnostics({
-          dispatchToBitmapMs: bitmapReadyMs - message.dispatchStartedMs,
-          bitmapToPostMs: message.postedAtMs - bitmapReadyMs,
-          workerQueueMs: message.workerStartedMs - message.postedAtMs,
-          workerInferenceMs: message.inferenceMs,
-          workerReturnMs: receivedAtMs - message.workerSentMs,
-          endToEndMs: receivedAtMs - message.dispatchStartedMs,
+          dispatchToBitmapMs,
+          bitmapToPostMs,
+          workerQueueMs,
+          workerInferenceMs,
+          workerReturnMs,
+          endToEndMs,
           resultAgeMs: 0,
           sequenceId: message.sequenceId
         });
