@@ -7,8 +7,9 @@ import { buildHeadPoseReference, type HeadPoseReference } from "../qc/Calibratio
 import { SessionDataManager, type CalibrationPointRecord, type ValidationPointRecord } from "../data/SessionDataManager";
 export type CalibrationPointCount = 5 | 9 | 13;
 export type TargetShape = "bullseye" | "circle" | "dot" | "cross";
+export type CalibrationTargetDistribution = "repeated" | "coverage";
 export interface CalibrationTargetConfig { sizePx:number; shape:TargetShape; color:string; }
-export interface CalibrationConfig { featureModel:"mediapipe"|"elg"|"mobileone_s0"|"resnet34"; points:CalibrationPointCount; settleMs:number; sampleMs:number; repetitions:number; randomize:boolean; jitterTargets:boolean; headPoseVariation:boolean; adaptiveTargets:boolean; target:CalibrationTargetConfig; model:GazeModelConfig; }
+export interface CalibrationConfig { featureModel:"mediapipe"|"elg"|"mobileone_s0"|"resnet34"; points:CalibrationPointCount; settleMs:number; sampleMs:number; repetitions:number; randomize:boolean; jitterTargets:boolean; targetDistribution?:CalibrationTargetDistribution; headPoseVariation:boolean; adaptiveTargets:boolean; target:CalibrationTargetConfig; model:GazeModelConfig; }
 export interface CalibrationSummary { id:string; config:CalibrationConfig; observations:number; newObservations:number; retainedObservations:number; targetsCompleted:number; samplesCollected:number; adaptiveUsed:boolean; headPoseReference:HeadPoseReference|null; }
 export interface SavedCalibration {version:1;savedAt:string;screenWidth:number;screenHeight:number;config:CalibrationConfig;model:SerializedGazeModel;summary:CalibrationSummary|null;}
 export interface ValidationPointResult { targetX:number; targetY:number; samplesExpected:number; samplesValid:number; accuracyPx:number; precisionRmsS2SPx:number; precisionSdPx:number; }
@@ -26,10 +27,10 @@ export class CalibrationController {
 
   async calibrate(getFeatures:()=>EyeHeadFeatures|null,beforeRound?:(round:number)=>Promise<void>):Promise<CalibrationSummary>{
     const key=modelKey(this.config.model);if(key!==this.accumulatedModelKey){this.accumulatedObservations=[];this.accumulatedModelKey=key;}
-    const adaptive=this.config.adaptiveTargets?this.memory.adaptivePoints(this.config.model.type,this.config.points):null;this.activePoints=adaptive??POINT_SETS[this.config.points];
+    const distributed=this.config.targetDistribution==="coverage";const adaptive=!distributed&&this.config.adaptiveTargets?this.memory.adaptivePoints(this.config.model.type,this.config.points):null;this.activePoints=adaptive??POINT_SETS[this.config.points];
     const newObservations:CalibrationObservation[]=[];const calibrationFeatureSamples:EyeHeadFeatures[]=[];let samplesCollected=0;const rounds=this.config.headPoseVariation?5:this.config.repetitions;this.target.hidden=false;
     const calibrationRun=this.sessionData?.beginCalibration(this.config,"full")??null;
-    try{for(let round=0;round<rounds;round++){if(beforeRound)await beforeRound(round);let points=this.activePoints.map(([x,y])=>{if(!this.config.jitterTargets)return[x,y]as const;const j=.035;return[clamp(x+(Math.random()*2-1)*j,.07,.93),clamp(y+(Math.random()*2-1)*j,.07,.93)]as const;});if(this.config.randomize)shuffle(points);for(let pointIndex=0;pointIndex<points.length;pointIndex++){const[nx,ny]=points[pointIndex],targetX=nx*innerWidth,targetY=ny*innerHeight,targetOnsetMs=performance.now();this.place(nx,ny);await wait(this.config.settleMs);const samplingStartMs=performance.now(),timedSamples=await collectFeatureSamples(getFeatures,this.config.sampleMs,this.config.featureModel==="elg",samplingStartMs),samplingEndMs=performance.now(),samples=timedSamples.map(s=>s.features);const pointRecord:CalibrationPointRecord={run:calibrationRun??0,round:round+1,point:pointIndex+1,targetX,targetY,targetXNorm:nx,targetYNorm:ny,targetOnsetMs,samplingStartMs,samplingEndMs};timedSamples.forEach((s,i)=>this.sessionData?.recordCalibrationSample(pointRecord,i+1,s.timestampMs,s.features));for(const copy of samples){calibrationFeatureSamples.push(copy);samplesCollected++;}const stable=samples.length?selectStableCalibrationSamples(samples):[];for(let i=0;i<stable.length;i++){const features=stable[i];newObservations.push({targetX,targetY,features});this.sessionData?.recordCalibrationFitObservation(pointRecord,i+1,features);}this.sessionData?.recordCalibrationPointSummary(pointRecord,samples.length,stable.length);}}}finally{this.target.hidden=true;}
+    try{for(let round=0;round<rounds;round++){if(beforeRound)await beforeRound(round);let points=distributed?coveragePoints(this.config.points,round,rounds):this.activePoints.map(([x,y])=>{if(!this.config.jitterTargets)return[x,y]as const;const j=.035;return[clamp(x+(Math.random()*2-1)*j,.07,.93),clamp(y+(Math.random()*2-1)*j,.07,.93)]as const;});if(this.config.randomize)shuffle(points);for(let pointIndex=0;pointIndex<points.length;pointIndex++){const[nx,ny]=points[pointIndex],targetX=nx*innerWidth,targetY=ny*innerHeight,targetOnsetMs=performance.now();this.place(nx,ny);await wait(this.config.settleMs);const samplingStartMs=performance.now(),timedSamples=await collectFeatureSamples(getFeatures,this.config.sampleMs,this.config.featureModel==="elg",samplingStartMs),samplingEndMs=performance.now(),samples=timedSamples.map(s=>s.features);const pointRecord:CalibrationPointRecord={run:calibrationRun??0,round:round+1,point:pointIndex+1,targetX,targetY,targetXNorm:nx,targetYNorm:ny,targetOnsetMs,samplingStartMs,samplingEndMs};timedSamples.forEach((s,i)=>this.sessionData?.recordCalibrationSample(pointRecord,i+1,s.timestampMs,s.features));for(const copy of samples){calibrationFeatureSamples.push(copy);samplesCollected++;}const stable=samples.length?selectStableCalibrationSamples(samples):[];for(let i=0;i<stable.length;i++){const features=stable[i];newObservations.push({targetX,targetY,features});this.sessionData?.recordCalibrationFitObservation(pointRecord,i+1,features);}this.sessionData?.recordCalibrationPointSummary(pointRecord,samples.length,stable.length);}}}finally{this.target.hidden=true;}
     const retainPrevious=this.config.adaptiveTargets&&this.accumulatedObservations.length>0;const retained=retainPrevious?this.accumulatedObservations:[];const combined=[...retained,...newObservations];const candidate=createGazeEstimator(this.config.model);await candidate.fit(combined);this.model=candidate;this.accumulatedObservations=combined;
     this.lastSummary={id:`cal-${Date.now()}`,config:cloneConfig(this.config),observations:combined.length,newObservations:newObservations.length,retainedObservations:retained.length,targetsCompleted:rounds*this.activePoints.length,samplesCollected,adaptiveUsed:adaptive!==null,headPoseReference:buildHeadPoseReference(calibrationFeatureSamples)};if(calibrationRun!==null)this.sessionData?.finishCalibration(calibrationRun,this.lastSummary);return this.lastSummary;
   }
@@ -48,6 +49,20 @@ export class CalibrationController {
   }
   private place(nx:number,ny:number){this.target.style.left=`${nx*100}%`;this.target.style.top=`${ny*100}%`;}
   private applyTargetStyle(){this.target.dataset.shape=this.config.target.shape;this.target.style.setProperty("--target-size",`${this.config.target.sizePx}px`);this.target.style.setProperty("--target-color",this.config.target.color);}
+}
+function coveragePoints(count:CalibrationPointCount,round:number,rounds:number):[number,number][]{
+  // Deterministic Latin-hypercube-like layout. Each round spans the whole screen,
+  // while the sub-position within each horizontal/vertical stratum changes by round.
+  // Across five head-pose rounds this yields 5*count complementary target locations.
+  const stride:Record<CalibrationPointCount,number>={5:2,9:4,13:5},margin=.06,span=1-2*margin,out:[number,number][]=[];
+  for(let j=0;j<count;j++){
+    const xFraction=(j+(round+.5)/rounds)/count;
+    const ySlot=(j*stride[count]+round*2)%count;
+    const ySub=((round*3+j)%rounds+.5)/rounds;
+    const yFraction=(ySlot+ySub)/count;
+    out.push([margin+span*xFraction,margin+span*yFraction]);
+  }
+  return out;
 }
 function clamp(v:number,a:number,b:number){return Math.max(a,Math.min(b,v));}
 function modelKey(c:GazeModelConfig){return JSON.stringify(c);}
