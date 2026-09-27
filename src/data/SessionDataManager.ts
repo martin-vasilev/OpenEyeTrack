@@ -5,7 +5,7 @@ type Cell=string|number|boolean|null;
 type Row=Record<string,Cell>;
 
 export interface CalibrationPointRecord {
-  run:number; round:number; point:number;
+  run:number; round:number; headPose:string; point:number;
   targetX:number; targetY:number; targetXNorm:number; targetYNorm:number;
   targetOnsetMs:number; samplingStartMs:number; samplingEndMs:number;
 }
@@ -100,7 +100,7 @@ export class SessionDataManager {
 }
 
 function calBase(p:CalibrationPointRecord):Row{return{
-  calibration_run:p.run,round:p.round,point:p.point,target_x_px:p.targetX,target_y_px:p.targetY,
+  calibration_run:p.run,round:p.round,head_pose:p.headPose,point:p.point,target_x_px:p.targetX,target_y_px:p.targetY,
   target_x_norm:p.targetXNorm,target_y_norm:p.targetYNorm,target_onset_unix_ms:monotonicToUnixMs(p.targetOnsetMs),
   sampling_start_unix_ms:monotonicToUnixMs(p.samplingStartMs),sampling_end_unix_ms:monotonicToUnixMs(p.samplingEndMs)
 };}
