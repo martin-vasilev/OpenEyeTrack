@@ -1,5 +1,5 @@
 export interface EyeTrackingSample {
-  timestamp:number; frameId:number;
+  timestamp:number; mediaTimestampMs:number; frameId:number;
   gazeXRaw:number|null; gazeYRaw:number|null; gazeX:number|null; gazeY:number|null; gazeConfidence:number|null; gazeOutlier:boolean|null; gazeRawDeviationPx:number|null;
   pupilLeft:number|null; pupilRight:number|null; headX:number|null; headY:number|null; headZ:number|null; headYaw:number|null; headPitch:number|null; headRoll:number|null; headPoseDistanceFromCalibration:number|null; eyeConfidence:number|null;
   elgLeftRelX:number|null; elgLeftRelY:number|null; elgRightRelX:number|null; elgRightRelY:number|null; elgLeftConfidence:number|null; elgRightConfidence:number|null; elgLeftRelXRaw:number|null; elgLeftRelYRaw:number|null; elgRightRelXRaw:number|null; elgRightRelYRaw:number|null; elgBinocularReliability:number|null;
