@@ -6,7 +6,7 @@ import { CalibrationMemory } from "./CalibrationMemory";
 import { buildHeadPoseReference, type HeadPoseReference } from "../qc/CalibrationHeadPose";
 import { SessionDataManager, type CalibrationPointRecord, type ValidationPointRecord } from "../data/SessionDataManager";
 import { DEFAULT_SMOOTH_PURSUIT_CONFIG, runSmoothPursuitCalibration, type SmoothPursuitConfig } from "./SmoothPursuitCalibration";
-export type CalibrationPointCount = 5 | 9 | 13;
+export type CalibrationPointCount = 5 | 9 | 13 | 15 | 25;
 export type TargetShape = "bullseye" | "circle" | "dot" | "cross";
 export type CalibrationTargetDistribution = "repeated" | "coverage";
 export type CalibrationHeadPoseCount = 1 | 3 | 5;
@@ -17,7 +17,7 @@ export interface CalibrationSummary { id:string; config:CalibrationConfig; obser
 export interface SavedCalibration {version:1;savedAt:string;screenWidth:number;screenHeight:number;config:CalibrationConfig;model:SerializedGazeModel;summary:CalibrationSummary|null;}
 export interface ValidationPointResult { targetX:number; targetY:number; samplesExpected:number; samplesValid:number; accuracyPx:number; precisionRmsS2SPx:number; precisionSdPx:number; }
 export interface ValidationResult { meanPx:number; medianPx:number; rmsePx:number; precisionRmsS2SPx:number; precisionSdPx:number; dataLoss:number; points:number; pointResults:ValidationPointResult[]; }
-const POINT_SETS:Record<CalibrationPointCount,readonly(readonly[number,number])[]>={5:[[.5,.5],[.12,.12],[.88,.12],[.12,.88],[.88,.88]],9:[[.12,.12],[.5,.12],[.88,.12],[.12,.5],[.5,.5],[.88,.5],[.12,.88],[.5,.88],[.88,.88]],13:[[.12,.12],[.5,.12],[.88,.12],[.12,.5],[.5,.5],[.88,.5],[.12,.88],[.5,.88],[.88,.88],[.31,.31],[.69,.31],[.31,.69],[.69,.69]]};
+const POINT_SETS:Record<CalibrationPointCount,readonly(readonly[number,number])[]>={5:[[.5,.5],[.12,.12],[.88,.12],[.12,.88],[.88,.88]],9:[[.12,.12],[.5,.12],[.88,.12],[.12,.5],[.5,.5],[.88,.5],[.12,.88],[.5,.88],[.88,.88]],13:[[.12,.12],[.5,.12],[.88,.12],[.12,.5],[.5,.5],[.88,.5],[.12,.88],[.5,.88],[.88,.88],[.31,.31],[.69,.31],[.31,.69],[.69,.69]],15:gridPoints(5,3),25:gridPoints(5,5)};
 const FEATURE_KEYS:(keyof EyeHeadFeatures)[]=["leftIrisX","leftIrisY","rightIrisX","rightIrisY","leftRelX","leftRelY","rightRelX","rightRelY","leftIrisDiameter","rightIrisDiameter","headX","headY","headZ","headYaw","headPitch","headRoll","appearanceGazeYaw","appearanceGazePitch","elgLeftRelX","elgLeftRelY","elgRightRelX","elgRightRelY","elgConfidence"];
 export class CalibrationController {
   model:GazeEstimator;private config:CalibrationConfig;private lastSummary:CalibrationSummary|null=null;private memory=new CalibrationMemory();private activePoints:readonly(readonly[number,number])[]=POINT_SETS[13];private accumulatedObservations:CalibrationObservation[]=[];private accumulatedModelKey="";
@@ -69,11 +69,16 @@ export function calibrationPoseSequence(runs:number,count:CalibrationHeadPoseCou
   if(n===4)return["centre","left","right","centre"];
   return["centre","left","right","left","right"];
 }
+function gridPoints(cols:number,rows:number):readonly (readonly [number,number])[]{
+  const xs=Array.from({length:cols},(_,i)=>.12+.76*(i/Math.max(1,cols-1)));
+  const ys=Array.from({length:rows},(_,i)=>.12+.76*(i/Math.max(1,rows-1)));
+  return ys.flatMap(y=>xs.map(x=>[x,y] as const));
+}
 function coveragePoints(count:CalibrationPointCount,round:number,rounds:number):[number,number][]{
   // Deterministic Latin-hypercube-like layout. Each round spans the whole screen,
   // while the sub-position within each horizontal/vertical stratum changes by round.
   // Across calibration runs this yields complementary target locations.
-  const stride:Record<CalibrationPointCount,number>={5:2,9:4,13:5},margin=.06,span=1-2*margin,out:[number,number][]=[];
+  const stride:Record<CalibrationPointCount,number>={5:2,9:4,13:5,15:4,25:7},margin=.06,span=1-2*margin,out:[number,number][]=[];
   for(let j=0;j<count;j++){
     const xFraction=(j+(round+.5)/rounds)/count;
     const ySlot=(j*stride[count]+round*2)%count;

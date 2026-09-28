@@ -11,7 +11,7 @@ export class CalibrationMemory {
     try{localStorage.setItem(KEY,JSON.stringify(all));}catch{/* memory is optional */}
   }
   adaptivePoints(model:GazeModelType, count:number):readonly (readonly [number,number])[]|null {
-    const previous=this.loadAll().find(x=>x.model===model);if(!previous||count<13)return null;
+    const previous=this.loadAll().find(x=>x.model===model);if(!previous||count!==13)return null;
     const base:(readonly[number,number])[]=[[.12,.12],[.5,.12],[.88,.12],[.12,.5],[.5,.5],[.88,.5],[.12,.88],[.5,.88],[.88,.88]];
     const worst=[...previous.points].sort((a,b)=>b.error-a.error).slice(0,4);
     const adaptive:([number,number])[]=worst.map((p,i)=>{const dx=i%2===0?.07:-.07,dy=i<2?.07:-.07;return[clip(p.x+dx),clip(p.y+dy)];});

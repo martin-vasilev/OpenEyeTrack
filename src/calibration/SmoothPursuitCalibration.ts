@@ -10,7 +10,7 @@ export interface SmoothPursuitConfig {
   turnExclusionMs:number;
 }
 export const DEFAULT_SMOOTH_PURSUIT_CONFIG:SmoothPursuitConfig={
-  enabled:false,speedPxPerSec:100,rows:5,marginNorm:.08,leadInMs:700,fitIntervalMs:250,turnExclusionMs:220
+  enabled:false,speedPxPerSec:100,rows:2,marginNorm:.08,leadInMs:700,fitIntervalMs:400,turnExclusionMs:250
 };
 
 export interface SmoothPursuitSample {
