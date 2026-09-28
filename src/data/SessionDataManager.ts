@@ -9,6 +9,11 @@ export interface CalibrationPointRecord {
   targetX:number; targetY:number; targetXNorm:number; targetYNorm:number;
   targetOnsetMs:number; samplingStartMs:number; samplingEndMs:number;
 }
+export interface CalibrationPursuitRecord {
+  run:number;sampleNumber:number;timestampMs:number;elapsedMs:number;
+  targetX:number;targetY:number;targetXNorm:number;targetYNorm:number;
+  segmentIndex:number;segmentType:"horizontal"|"vertical";selectedForFit:boolean;
+}
 export interface ValidationPointRecord {
   validationRun:number; calibrationRun:number|null; eventType:"validation"|"drift_check"; point:number;
   targetX:number; targetY:number; targetXNorm:number; targetYNorm:number;
@@ -44,6 +49,24 @@ export class SessionDataManager {
   }
   recordCalibrationPointSummary(p:CalibrationPointRecord,samplesCollected:number,fitObservations:number):void{
     this.calibrationRows.push({...calBase(p),row_type:"point_summary",event_timestamp_unix_ms:unixNowMs(),samples_collected:samplesCollected,fit_observations:fitObservations});
+  }
+  recordPursuitSample(p:CalibrationPursuitRecord,features:EyeHeadFeatures):void{
+    this.calibrationRows.push({
+      row_type:"pursuit_sample",calibration_phase:"pursuit",calibration_run:p.run,sample_number:p.sampleNumber,
+      sample_timestamp_unix_ms:monotonicToUnixMs(p.timestampMs),pursuit_elapsed_ms:p.elapsedMs,
+      target_x_px:p.targetX,target_y_px:p.targetY,target_x_norm:p.targetXNorm,target_y_norm:p.targetYNorm,
+      pursuit_segment:p.segmentIndex+1,pursuit_segment_type:p.segmentType,selected_for_fit:p.selectedForFit,...featureColumns(features)
+    });
+  }
+  recordPursuitSummary(run:number,values:{startedMs:number;endedMs:number;movementStartedMs:number;movementEndedMs:number;durationMs:number;pathLengthPx:number;speedPxPerSec:number;samplesCollected:number;fitObservations:number}):void{
+    this.calibrationRows.push({
+      row_type:"pursuit_summary",calibration_phase:"pursuit",calibration_run:run,
+      event_timestamp_unix_ms:monotonicToUnixMs(values.endedMs),
+      pursuit_started_unix_ms:monotonicToUnixMs(values.startedMs),pursuit_movement_started_unix_ms:monotonicToUnixMs(values.movementStartedMs),
+      pursuit_movement_ended_unix_ms:monotonicToUnixMs(values.movementEndedMs),pursuit_duration_ms:values.durationMs,
+      pursuit_path_length_px:values.pathLengthPx,pursuit_speed_px_per_s:values.speedPxPerSec,
+      samples_collected:values.samplesCollected,fit_observations:values.fitObservations
+    });
   }
   finishCalibration(run:number,summary:unknown):void{
     this.calibrationRows.push({row_type:"run_summary",calibration_run:run,event_timestamp_unix_ms:unixNowMs(),summary_json:safeJson(summary)});
@@ -100,7 +123,7 @@ export class SessionDataManager {
 }
 
 function calBase(p:CalibrationPointRecord):Row{return{
-  calibration_run:p.run,round:p.round,head_pose:p.headPose,point:p.point,target_x_px:p.targetX,target_y_px:p.targetY,
+  calibration_phase:"static",calibration_run:p.run,round:p.round,head_pose:p.headPose,point:p.point,target_x_px:p.targetX,target_y_px:p.targetY,
   target_x_norm:p.targetXNorm,target_y_norm:p.targetYNorm,target_onset_unix_ms:monotonicToUnixMs(p.targetOnsetMs),
   sampling_start_unix_ms:monotonicToUnixMs(p.samplingStartMs),sampling_end_unix_ms:monotonicToUnixMs(p.samplingEndMs)
 };}
