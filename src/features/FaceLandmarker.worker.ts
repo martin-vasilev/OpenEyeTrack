@@ -3,7 +3,11 @@ import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 let landmarker: FaceLandmarker | null = null;
 
 type WorkerRequest =
-  | { type: "initialize" }
+  | {
+      type: "initialize";
+      mediapipeWasmBaseUrl?: string;
+      faceLandmarkerModelUrl?: string;
+    }
   | { type: "detect"; bitmap: ImageBitmap; timestampMs: number; sequenceId: number; postedAtMs: number; dispatchStartedMs: number };
 
 self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
@@ -14,11 +18,15 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       // In the dev preview the worker is under /OpenEyeTrack/dev/assets/, so
       // ../mediapipe/wasm resolves to /OpenEyeTrack/dev/mediapipe/wasm.
       // The same relative rule also works for the root/main deployment.
-      const wasmPath = new URL("../mediapipe/wasm/", self.location.href).href.replace(/\/$/, "");
+      const wasmPath = (
+        message.mediapipeWasmBaseUrl ??
+        new URL("../mediapipe/wasm/", self.location.href).href
+      ).replace(/\/$/, "");
       const vision = await FilesetResolver.forVisionTasks(wasmPath, true);
       landmarker = await FaceLandmarker.createFromOptions(vision, {
         baseOptions: {
           modelAssetPath:
+            message.faceLandmarkerModelUrl ??
             "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task",
           delegate: "CPU"
         },
