@@ -302,3 +302,69 @@ This keeps the lower-level setup path available for specialised jsPsych, PsychoJ
 ### Cancellation
 
 If a participant cancels the built-in setup screen, the returned promise rejects with `OpenEyeTrackSetupCancelledError`. The host experiment can catch this and decide whether to retry, show instructions, or terminate the session.
+
+
+## Live head-position guidance
+
+The default SDK setup now includes the richer positioning behaviour used by the OpenEyeTrack demo.
+
+### Neutral positioning
+
+Before calibration begins, the SDK evaluates live head features and gives corrective instructions such as:
+
+- move slightly left/right or up/down;
+- move closer/farther away;
+- raise/lower the chin;
+- turn the face slightly;
+- keep the head level.
+
+The **Begin setup** button is enabled only after the position remains acceptable for approximately 500 ms.
+
+The current criterion is intentionally shared with the tested demo behaviour rather than introducing a new SDK-specific threshold.
+
+### Multi-pose calibration
+
+When `headPoseCount` is greater than one, the first neutral calibration run establishes the reference pose. Before later runs, the SDK shows:
+
+- the mirrored live camera;
+- an amber target face mesh derived from the neutral reference;
+- the current face mesh in blue;
+- live alignment feedback.
+
+The next calibration run starts automatically after the live face remains within the target tolerances for approximately 650 ms.
+
+For example, a three-pose configuration:
+
+```ts
+await tracker.runSetupProcedure({
+  ui: "default",
+  config: {
+    ...defaultCalibrationConfig(),
+    repetitions: 3,
+    headPoseVariation: true,
+    headPoseCount: 3
+  }
+});
+```
+
+uses the current calibration schedule:
+
+```text
+centre → left → right
+```
+
+Five-pose calibration can additionally include up/down positions.
+
+The mesh shift and acceptance tolerances are inherited from the existing OpenEyeTrack demo so SDK and demo positioning behaviour remain comparable.
+
+### Reusable positioning helpers
+
+Advanced integrations can also use the positioning logic without the default UI:
+
+```ts
+evaluateNeutralHeadPosition(features);
+evaluatePoseAlignment(baselineFace, currentFace, "left");
+drawPoseAlignmentGuide(canvas, video, baselineFace, currentFace, "left");
+```
+
+This allows a platform adapter to build its own visual presentation while keeping the same positioning criteria.
