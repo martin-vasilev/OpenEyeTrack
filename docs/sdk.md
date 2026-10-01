@@ -175,3 +175,63 @@ tracker.setRecordingState(false);
 ### Why aliases are useful
 
 The aliases are not intended to make OpenEyeTrack pretend to be an EyeLink device. They reduce the conceptual changes needed when porting an experiment: setup, recording state, messages and live gaze access retain familiar meanings, while the underlying browser tracker remains replaceable.
+
+
+## Portable asset hosting
+
+The SDK no longer assumes it is hosted at `/OpenEyeTrack/`.
+
+By default, OpenEyeTrack resolves its local runtime assets relative to the directory containing the experiment page:
+
+```text
+<experiment base>/
+  models/
+    gazeml_elg_i60x36_n32.onnx
+    mobileone_s0_gaze.onnx
+    resnet34_gaze.onnx
+  mediapipe/
+    wasm/
+      ...
+```
+
+For an experiment hosted somewhere else, set a base directory explicitly:
+
+```ts
+const tracker = new OpenEyeTrackRuntime({
+  video,
+  calibrationTarget,
+  assetBaseUrl: "https://example.org/my-study/openeyetrack/"
+});
+```
+
+This resolves, for example:
+
+```text
+https://example.org/my-study/openeyetrack/models/gazeml_elg_i60x36_n32.onnx
+https://example.org/my-study/openeyetrack/mediapipe/wasm/
+```
+
+Fine-grained overrides are also supported:
+
+```ts
+const tracker = new OpenEyeTrackRuntime({
+  video,
+  calibrationTarget,
+  assets: {
+    baseUrl: "/vendor/openeyetrack/",
+    elgModelUrl: "https://models.example.org/elg.onnx",
+    mediapipeWasmBaseUrl: "/shared/mediapipe/wasm/",
+    ortWasmBaseUrl: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/"
+  }
+});
+```
+
+The resolved manifest can be inspected at runtime:
+
+```ts
+console.log(tracker.getAssetUrls());
+```
+
+This is intended to let the same SDK bundle run under GitHub Pages, JATOS, Pavlovia, university web servers, or other browser experiment hosts without editing OpenEyeTrack source code.
+
+The MediaPipe face-landmarker model remains remotely hosted by default, but `faceLandmarkerModelUrl` can be overridden for fully controlled/self-hosted deployments.
