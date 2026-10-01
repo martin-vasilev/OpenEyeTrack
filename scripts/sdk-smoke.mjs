@@ -3,7 +3,8 @@ import {
   OpenEyeTrackRuntime,
   createOpenEyeTrack,
   defaultCalibrationConfig,
-  isCompatibleOpenEyeTrackApi
+  isCompatibleOpenEyeTrackApi,
+  resolveOpenEyeTrackAssets
 } from "../dist-sdk/openeyetrack.es.js";
 
 if (OPEN_EYE_TRACK_API_VERSION !== "1") {
@@ -56,3 +57,14 @@ if (defaults.points !== 13 || defaults.repetitions !== 5 || defaults.headPoseCou
   throw new Error("Safe SDK calibration defaults changed unexpectedly.");
 }
 console.log("OpenEyeTrack experiment runtime compatibility surface passed.");
+
+const portable = resolveOpenEyeTrackAssets({
+  baseUrl: "https://example.org/study/vendor/openeyetrack/"
+});
+if (portable.elgModelUrl !== "https://example.org/study/vendor/openeyetrack/models/gazeml_elg_i60x36_n32.onnx") {
+  throw new Error(`Portable ELG asset resolution failed: ${portable.elgModelUrl}`);
+}
+if (portable.mediapipeWasmBaseUrl !== "https://example.org/study/vendor/openeyetrack/mediapipe/wasm/") {
+  throw new Error(`Portable MediaPipe asset resolution failed: ${portable.mediapipeWasmBaseUrl}`);
+}
+console.log("OpenEyeTrack portable asset resolution passed.");
