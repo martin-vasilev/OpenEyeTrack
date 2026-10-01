@@ -19,6 +19,11 @@ import { AdaptiveGazeFilter } from "../gaze/AdaptiveGazeFilter";
 import { SessionDataManager } from "../data/SessionDataManager";
 import type { EyeTrackingSample } from "../types/Sample";
 import type { GazePrediction } from "../calibration/LinearGazeModel";
+import {
+  resolveOpenEyeTrackAssets,
+  type OpenEyeTrackAssetConfig,
+  type ResolvedOpenEyeTrackAssets
+} from "../core/AssetPaths";
 
 export interface OpenEyeTrackMessage {
   timestamp: number;
@@ -54,6 +59,13 @@ export interface OpenEyeTrackRuntimeOptions {
   calibrationConfig?: CalibrationConfig;
   sessionData?: SessionDataManager;
   onFrame?: (frame: OpenEyeTrackRuntimeFrame) => void;
+  /**
+   * Convenience base directory for models/ and mediapipe/wasm/.
+   * Defaults to the directory containing the hosting experiment page.
+   */
+  assetBaseUrl?: string;
+  /** Fine-grained asset overrides. These take precedence over assetBaseUrl. */
+  assets?: OpenEyeTrackAssetConfig;
 }
 
 export function defaultCalibrationConfig(): CalibrationConfig {
@@ -87,10 +99,11 @@ export class OpenEyeTrackRuntime {
   readonly core: OpenEyeTrack;
   readonly sessionData: SessionDataManager;
   readonly calibration: CalibrationController;
+  readonly assets: ResolvedOpenEyeTrackAssets;
 
-  private readonly faceTracker = new FaceFeatureTracker();
-  private readonly appearanceTracker = new AppearanceGazeTracker();
-  private readonly elgTracker = new ElgEyeTracker();
+  private readonly faceTracker: FaceFeatureTracker;
+  private readonly appearanceTracker: AppearanceGazeTracker;
+  private readonly elgTracker: ElgEyeTracker;
   private readonly gazeFilter = new AdaptiveGazeFilter();
 
   private animationId: number | null = null;
@@ -108,6 +121,22 @@ export class OpenEyeTrackRuntime {
   private messages: OpenEyeTrackMessage[] = [];
 
   constructor(private readonly options: OpenEyeTrackRuntimeOptions) {
+    const assetConfig: OpenEyeTrackAssetConfig = { ...options.assets };
+    if (options.assetBaseUrl && assetConfig.baseUrl === undefined) assetConfig.baseUrl = options.assetBaseUrl;
+    this.assets = resolveOpenEyeTrackAssets(assetConfig);
+    this.faceTracker = new FaceFeatureTracker({
+      mediapipeWasmBaseUrl: this.assets.mediapipeWasmBaseUrl,
+      faceLandmarkerModelUrl: this.assets.faceLandmarkerModelUrl
+    });
+    this.appearanceTracker = new AppearanceGazeTracker({
+      mobileOneModelUrl: this.assets.mobileOneModelUrl,
+      resnet34ModelUrl: this.assets.resnet34ModelUrl,
+      ortWasmBaseUrl: this.assets.ortWasmBaseUrl
+    });
+    this.elgTracker = new ElgEyeTracker({
+      modelUrl: this.assets.elgModelUrl,
+      ortWasmBaseUrl: this.assets.ortWasmBaseUrl
+    });
     this.config = cloneConfig(options.calibrationConfig ?? defaultCalibrationConfig());
     this.sessionData = options.sessionData ?? new SessionDataManager();
     this.core = new OpenEyeTrack(options.video);
@@ -283,6 +312,8 @@ export class OpenEyeTrackRuntime {
   getDetectedFaces(): number { return this.detectedFaces; }
 
   getSampleCount(): number { return this.core.getSampleCount(); }
+
+  getAssetUrls(): ResolvedOpenEyeTrackAssets { return { ...this.assets }; }
 
   async drain(): Promise<void> { await this.elgTracker.drain(); }
 
