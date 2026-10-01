@@ -28,13 +28,14 @@ const config = {
 const tracker = new OpenEyeTrackRuntime({
   video,
   calibrationTarget,
-  calibrationConfig: config
+  calibrationConfig: config,
+  assetBaseUrl: new URL("./", document.baseURI).href
 });
 
 connect.onclick = async () => {
   try {
     const settings = await tracker.setConnectionState(true, { frameRate: 60 });
-    status.textContent = `Connected. isConnected() = ${tracker.isConnected()}\n${JSON.stringify(settings, null, 2)}`;
+    status.textContent = `Connected. isConnected() = ${tracker.isConnected()}\nAsset base: ${tracker.getAssetUrls().baseUrl}\nELG model: ${tracker.getAssetUrls().elgModelUrl}\n${JSON.stringify(settings, null, 2)}`;
     connect.disabled = true;
     setup.disabled = false;
     disconnect.disabled = false;
