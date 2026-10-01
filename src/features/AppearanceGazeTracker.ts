@@ -1,9 +1,6 @@
 import * as ort from "onnxruntime-web";
 import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
-
-// GitHub Pages serves the app from /OpenEyeTrack/. Point ORT at an absolute
-// runtime location so it does not try to fetch its WASM files from the site root.
-ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/";
+import { resolveOpenEyeTrackAssets } from "../core/AssetPaths";
 
 export type EyeFeatureModel = "mediapipe" | "elg" | "mobileone_s0" | "resnet34";
 
@@ -13,11 +10,11 @@ export interface AppearanceGazeFeatures {
   model: EyeFeatureModel;
 }
 
-const BASE_URL = "/OpenEyeTrack/";
-const MODEL_URLS: Record<Exclude<EyeFeatureModel, "mediapipe" | "elg">, string> = {
-  mobileone_s0: `${BASE_URL}models/mobileone_s0_gaze.onnx`,
-  resnet34: `${BASE_URL}models/resnet34_gaze.onnx`
-};
+export interface AppearanceGazeTrackerOptions {
+  mobileOneModelUrl?: string;
+  resnet34ModelUrl?: string;
+  ortWasmBaseUrl?: string;
+}
 
 export class AppearanceGazeTracker {
   private session: ort.InferenceSession | null = null;
@@ -26,6 +23,16 @@ export class AppearanceGazeTracker {
   private busy = false;
   private lastRun = 0;
   private readonly minIntervalMs = 80;
+  private readonly modelUrls: Record<Exclude<EyeFeatureModel, "mediapipe" | "elg">, string>;
+
+  constructor(options: AppearanceGazeTrackerOptions = {}) {
+    const assets = resolveOpenEyeTrackAssets();
+    ort.env.wasm.wasmPaths = options.ortWasmBaseUrl ?? assets.ortWasmBaseUrl;
+    this.modelUrls = {
+      mobileone_s0: options.mobileOneModelUrl ?? assets.mobileOneModelUrl,
+      resnet34: options.resnet34ModelUrl ?? assets.resnet34ModelUrl
+    };
+  }
 
   get activeModel(): EyeFeatureModel { return this.model; }
 
@@ -34,7 +41,7 @@ export class AppearanceGazeTracker {
     this.model = model;
     this.session = null;
     if (model === "mediapipe" || model === "elg") return;
-    const load = ort.InferenceSession.create(MODEL_URLS[model], {
+    const load = ort.InferenceSession.create(this.modelUrls[model], {
       executionProviders: ["wasm"],
       graphOptimizationLevel: "all"
     });
