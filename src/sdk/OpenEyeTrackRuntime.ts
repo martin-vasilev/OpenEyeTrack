@@ -261,6 +261,14 @@ export class OpenEyeTrackRuntime {
 
   getSampleCount(): number { return this.core.getSampleCount(); }
 
+  async drain(): Promise<void> { await this.elgTracker.drain(); }
+
+  resetGazeFilter(): void { this.gazeFilter.reset(); }
+
+  getFeatureModel(): CalibrationConfig["featureModel"] { return this.config.featureModel; }
+
+  getAcquisitionMode(): string { return this.elgTracker.activeAcquisitionMode; }
+
   getObservedFps(): number | null { return this.core.getObservedFps(); }
 
   getFrameDiagnostics() { return this.core.getFrameDiagnostics(); }
