@@ -28,6 +28,7 @@ import {
   DefaultSetupUI,
   OpenEyeTrackSetupCancelledError
 } from "./DefaultSetupUI";
+import { cloneLandmarks } from "./HeadPositioning";
 
 export interface OpenEyeTrackMessage {
   timestamp: number;
@@ -281,9 +282,12 @@ export class OpenEyeTrackRuntime {
     try {
       await ui.intro(
         config,
-        () => this.detectedFaces === 1 && this.latestFeatures !== null,
+        () => this.latestFeatures,
         () => this.detectedFaces
       );
+
+      const baselineFace = cloneLandmarks(this.latestFace);
+      if (!baselineFace) throw new Error("Could not capture a neutral face reference for calibration.");
 
       ui.showProgress(`Preparing ${featureModelLabel(config.featureModel)}…`);
 
@@ -295,8 +299,15 @@ export class OpenEyeTrackRuntime {
             ui.showCalibration(round, totalRuns, pose);
             return;
           }
-          if ((config.headPoseCount ?? 1) > 1) {
-            await ui.promptPose(round, totalRuns, pose);
+
+          if ((config.headPoseCount ?? 1) > 1 && round > 0) {
+            await ui.guidePose(
+              round,
+              totalRuns,
+              pose,
+              baselineFace,
+              () => this.latestFace
+            );
           } else {
             ui.showCalibration(round, totalRuns, pose);
           }
@@ -305,9 +316,19 @@ export class OpenEyeTrackRuntime {
           if (options.beforePursuit) {
             await options.beforePursuit();
             ui.showProgress("Smooth-pursuit calibration · follow the target");
-          } else {
-            await ui.promptPursuit();
+            return;
           }
+
+          if ((config.headPoseCount ?? 1) > 1) {
+            await ui.guidePose(
+              Math.max(0, totalRuns - 1),
+              totalRuns,
+              "centre",
+              baselineFace,
+              () => this.latestFace
+            );
+          }
+          await ui.promptPursuit();
         }
       });
 
