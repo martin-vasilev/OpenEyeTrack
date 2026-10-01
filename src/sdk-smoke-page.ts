@@ -17,9 +17,11 @@ document.querySelector<HTMLElement>("#api-version")!.textContent = OPEN_EYE_TRAC
 const config = {
   ...defaultCalibrationConfig(),
   points: 5 as const,
-  repetitions: 1,
-  settleMs: 350,
-  sampleMs: 600,
+  repetitions: 3,
+  headPoseVariation: true,
+  headPoseCount: 3 as const,
+  settleMs: 300,
+  sampleMs: 500,
   randomize: false,
   jitterTargets: false
 };
