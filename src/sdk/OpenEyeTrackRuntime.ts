@@ -24,6 +24,10 @@ import {
   type OpenEyeTrackAssetConfig,
   type ResolvedOpenEyeTrackAssets
 } from "../core/AssetPaths";
+import {
+  DefaultSetupUI,
+  OpenEyeTrackSetupCancelledError
+} from "./DefaultSetupUI";
 
 export interface OpenEyeTrackMessage {
   timestamp: number;
@@ -49,13 +53,25 @@ export interface OpenEyeTrackSetupResult {
 export interface OpenEyeTrackSetupOptions {
   config?: CalibrationConfig;
   validate?: boolean;
+  /**
+   * "default" temporarily takes over the browser viewport for positioning,
+   * calibration and validation. "none" leaves all setup presentation to the host.
+   *
+   * When calibrationTarget is omitted from the runtime constructor, this
+   * defaults to "default".
+   */
+  ui?: "default" | "none";
   beforeRound?: (round: number, pose: CalibrationHeadPose) => Promise<void>;
   beforePursuit?: () => Promise<void>;
 }
 
 export interface OpenEyeTrackRuntimeOptions {
   video: HTMLVideoElement;
-  calibrationTarget: HTMLElement;
+  /**
+   * Optional host-provided calibration target. Omit this to let the SDK create
+   * and manage its own full-screen setup/calibration UI.
+   */
+  calibrationTarget?: HTMLElement;
   calibrationConfig?: CalibrationConfig;
   sessionData?: SessionDataManager;
   onFrame?: (frame: OpenEyeTrackRuntimeFrame) => void;
@@ -105,6 +121,8 @@ export class OpenEyeTrackRuntime {
   private readonly appearanceTracker: AppearanceGazeTracker;
   private readonly elgTracker: ElgEyeTracker;
   private readonly gazeFilter = new AdaptiveGazeFilter();
+  private readonly calibrationTarget: HTMLElement;
+  private setupUi: DefaultSetupUI | null = null;
 
   private animationId: number | null = null;
   private lastProcessedVideoTime = -1;
@@ -140,7 +158,13 @@ export class OpenEyeTrackRuntime {
     this.config = cloneConfig(options.calibrationConfig ?? defaultCalibrationConfig());
     this.sessionData = options.sessionData ?? new SessionDataManager();
     this.core = new OpenEyeTrack(options.video);
-    this.calibration = new CalibrationController(options.calibrationTarget, this.config, this.sessionData);
+    if (options.calibrationTarget) {
+      this.calibrationTarget = options.calibrationTarget;
+    } else {
+      this.setupUi = new DefaultSetupUI(options.video);
+      this.calibrationTarget = this.setupUi.target;
+    }
+    this.calibration = new CalibrationController(this.calibrationTarget, this.config, this.sessionData);
   }
 
   async initialize(): Promise<void> {
@@ -181,6 +205,7 @@ export class OpenEyeTrackRuntime {
     this.latestAppearance = null;
     this.latestElg = null;
     this.detectedFaces = 0;
+    this.setupUi?.hide();
     return false;
   }
 
@@ -240,13 +265,77 @@ export class OpenEyeTrackRuntime {
   }
 
   async runSetupProcedure(options: OpenEyeTrackSetupOptions = {}): Promise<OpenEyeTrackSetupResult> {
-    const calibration = await this.calibrate(options);
-    const validation = options.validate === false ? null : await this.validate();
-    return { RESULT: "CALIBRATION_OK", calibration, validation };
+    if (!this.connected) throw new Error("OpenEyeTrack is not connected. Start the camera first.");
+
+    const uiMode = options.ui ?? (this.options.calibrationTarget ? "none" : "default");
+    if (uiMode === "none") {
+      const calibration = await this.calibrate(options);
+      const validation = options.validate === false ? null : await this.validate();
+      return { RESULT: "CALIBRATION_OK", calibration, validation };
+    }
+
+    const ui = this.ensureSetupUi();
+    const config = cloneConfig(options.config ?? this.config);
+    const totalRuns = Math.max(1, Math.min(5, Math.round(config.repetitions)));
+
+    try {
+      await ui.intro(
+        config,
+        () => this.detectedFaces === 1 && this.latestFeatures !== null,
+        () => this.detectedFaces
+      );
+
+      ui.showProgress(`Preparing ${featureModelLabel(config.featureModel)}…`);
+
+      const calibration = await this.calibrate({
+        config,
+        beforeRound: async (round, pose) => {
+          if (options.beforeRound) {
+            await options.beforeRound(round, pose);
+            ui.showCalibration(round, totalRuns, pose);
+            return;
+          }
+          if ((config.headPoseCount ?? 1) > 1) {
+            await ui.promptPose(round, totalRuns, pose);
+          } else {
+            ui.showCalibration(round, totalRuns, pose);
+          }
+        },
+        beforePursuit: async () => {
+          if (options.beforePursuit) {
+            await options.beforePursuit();
+            ui.showProgress("Smooth-pursuit calibration · follow the target");
+          } else {
+            await ui.promptPursuit();
+          }
+        }
+      });
+
+      let validation: ValidationResult | null = null;
+      if (options.validate !== false) {
+        ui.showValidation();
+        validation = await this.validate();
+      }
+
+      await ui.results(validation);
+      return { RESULT: "CALIBRATION_OK", calibration, validation };
+    } catch (error) {
+      if (error instanceof OpenEyeTrackSetupCancelledError) {
+        ui.hide();
+        throw error;
+      }
+      await ui.error(error);
+      throw error;
+    }
   }
 
   async startSetup(options: OpenEyeTrackSetupOptions = {}): Promise<OpenEyeTrackSetupResult> {
     return this.runSetupProcedure(options);
+  }
+
+  private ensureSetupUi(): DefaultSetupUI {
+    if (!this.setupUi) this.setupUi = new DefaultSetupUI(this.options.video, this.calibrationTarget);
+    return this.setupUi;
   }
 
   startRecording(): void {
@@ -477,6 +566,13 @@ export class OpenEyeTrackRuntime {
     this.core.setGaze(null);
     this.gazeFilter.reset();
   }
+}
+
+function featureModelLabel(model: CalibrationConfig["featureModel"]): string {
+  if (model === "elg") return "ELG eye-landmark model";
+  if (model === "mediapipe") return "MediaPipe iris landmarks";
+  if (model === "mobileone_s0") return "MobileGaze MobileOne S0";
+  return "MobileGaze ResNet-34";
 }
 
 function cloneConfig(config: CalibrationConfig): CalibrationConfig {
