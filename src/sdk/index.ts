@@ -53,3 +53,16 @@ export {
   DefaultSetupUI,
   OpenEyeTrackSetupCancelledError
 } from "./DefaultSetupUI";
+
+export {
+  cloneLandmarks,
+  drawPoseAlignmentGuide,
+  evaluateNeutralHeadPosition,
+  evaluatePoseAlignment,
+  faceBounds
+} from "./HeadPositioning";
+export type {
+  FaceBounds,
+  HeadPositionStatus,
+  PoseAlignmentStatus
+} from "./HeadPositioning";
