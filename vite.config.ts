@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 
 export default defineConfig(() => {
   const diagnostics = resolve(__dirname, "diagnostics.html");
+  const sdkTest = resolve(__dirname, "sdk-test.html");
   const input: Record<string, string> = {
     main: resolve(__dirname, "index.html")
   };
@@ -12,6 +13,7 @@ export default defineConfig(() => {
   // means the same config remains safe on stable/main until diagnostics is
   // deliberately promoted there.
   if (existsSync(diagnostics)) input.diagnostics = diagnostics;
+  if (existsSync(sdkTest)) input.sdkTest = sdkTest;
 
   return {
     base: "/OpenEyeTrack/",
