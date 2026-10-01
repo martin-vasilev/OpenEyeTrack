@@ -3,6 +3,8 @@ import {
   OpenEyeTrackRuntime,
   createOpenEyeTrack,
   defaultCalibrationConfig,
+  evaluateNeutralHeadPosition,
+  evaluatePoseAlignment,
   isCompatibleOpenEyeTrackApi,
   resolveOpenEyeTrackAssets
 } from "../dist-sdk/openeyetrack.es.js";
@@ -68,3 +70,20 @@ if (portable.mediapipeWasmBaseUrl !== "https://example.org/study/vendor/openeyet
   throw new Error(`Portable MediaPipe asset resolution failed: ${portable.mediapipeWasmBaseUrl}`);
 }
 console.log("OpenEyeTrack portable asset resolution passed.");
+
+const neutral = evaluateNeutralHeadPosition({
+  headX: .5,
+  headY: .49,
+  headZ: .25,
+  headYaw: 0,
+  headPitch: 0,
+  headRoll: 0
+});
+if (!neutral.ready) throw new Error(`Neutral head-position criterion failed: ${neutral.message}`);
+
+const baselineFace = [{ x: .4, y: .4, z: 0 }, { x: .6, y: .6, z: 0 }];
+const leftFace = [{ x: .325, y: .4, z: 0 }, { x: .525, y: .6, z: 0 }];
+if (!evaluatePoseAlignment(baselineFace, leftFace, "left").ready) {
+  throw new Error("Ghost-mesh pose alignment criterion failed.");
+}
+console.log("OpenEyeTrack head-position guidance criteria passed.");
