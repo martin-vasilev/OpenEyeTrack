@@ -6,6 +6,11 @@ export interface FaceFeatures {
   timestamp: number;
 }
 
+export interface FaceFeatureTrackerOptions {
+  mediapipeWasmBaseUrl?: string;
+  faceLandmarkerModelUrl?: string;
+}
+
 interface CachedFaceResult {
   faceLandmarks: NormalizedLandmark[][];
   facialTransformationMatrixes: Array<{ rows: number; columns: number; data: number[] }>;
@@ -42,6 +47,8 @@ export class FaceFeatureTracker {
   private lastInferenceMs: number | null = null;
   private sequenceId = 0;
   private bitmapReadyBySequence = new Map<number, number>();
+
+  constructor(private readonly options: FaceFeatureTrackerOptions = {}) {}
 
   async initialize(): Promise<void> {
     if (this.initialized) return;
@@ -117,7 +124,11 @@ export class FaceFeatureTracker {
         this.initializePromise = null;
       } else console.error("[OpenEyeTrack MediaPipe worker]", error);
     };
-    this.worker.postMessage({ type: "initialize" });
+    this.worker.postMessage({
+      type: "initialize",
+      mediapipeWasmBaseUrl: this.options.mediapipeWasmBaseUrl,
+      faceLandmarkerModelUrl: this.options.faceLandmarkerModelUrl
+    });
     return this.initializePromise;
   }
 
