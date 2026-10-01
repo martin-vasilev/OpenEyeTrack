@@ -155,6 +155,14 @@ export class DefaultSetupUI {
     }
   }
 
+  showProgress(message: string): void {
+    this.mount();
+    this.root.hidden = false;
+    this.card.hidden = true;
+    this.progress.hidden = false;
+    this.progress.textContent = message;
+  }
+
   showCalibration(round: number, total: number, pose: CalibrationHeadPose): void {
     this.mount();
     this.root.hidden = false;
