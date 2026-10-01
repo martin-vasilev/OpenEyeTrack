@@ -11,8 +11,6 @@
     button.primary{background:#172033;color:white}
     button:disabled{opacity:.45}
     #status{white-space:pre-wrap;background:#f8fafc;padding:1rem;border-radius:12px;border:1px solid #e2e8f0}
-    #calibration-target{--target-size:34px;--target-color:#172033;position:fixed;z-index:1000;width:var(--target-size);height:var(--target-size);margin-left:calc(var(--target-size)/-2);margin-top:calc(var(--target-size)/-2);border:3px solid var(--target-color);border-radius:50%;background:white;box-sizing:border-box}
-    #calibration-target span{position:absolute;width:22%;height:22%;left:39%;top:39%;border-radius:50%;background:var(--target-color)}
     [hidden]{display:none!important}
   </style>
 </head>
@@ -30,7 +28,6 @@
     <button id="disconnect" disabled>Disconnect</button>
   </div>
   <pre id="status">SDK runtime loaded.</pre>
-  <div id="calibration-target" hidden><span></span></div>
   <script type="module" src="/src/sdk-smoke-page.ts"></script>
 </body>
 </html>
