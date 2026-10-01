@@ -257,9 +257,13 @@ See [docs/specification.md](docs/specification.md) for the architecture/specific
 
 ## Licence
 
-A dedicated licence file has not yet been finalised in the repository. The intended direction is non-commercial/source-available licensing.
+OpenEyeTrack is licensed under the **PolyForm Noncommercial License 1.0.0**.
 
-Until a licence is added, do not assume that the absence of a licence grants permission for unrestricted reuse or redistribution.
+You may use, modify and redistribute the software for permitted noncommercial purposes under the terms of that licence.
+
+**Commercial or other for-profit use is not granted by this licence.** If you want to use OpenEyeTrack in a commercial or for-profit context, please obtain separate written permission from the project owner.
+
+See [LICENSE](LICENSE) for the full terms.
 
 ## Contributing
 
