@@ -128,3 +128,50 @@ Platform packages can depend on `OpenEyeTrackAPI`, for example:
 A jsPsych extension should call only stable methods such as `setTrial()`, `mark()`, `startRecording()`, `stopRecording()` and `onGaze()`.
 
 This means gaze models, calibration algorithms, filtering and feature extraction can be replaced in later releases without requiring platform adapters to be rewritten, provided the public API contract remains compatible.
+
+
+## EyeLink / PsychoPy / Psychtoolbox compatibility vocabulary
+
+The experiment runtime intentionally exposes familiar control names.
+
+| Familiar workflow | OpenEyeTrack runtime |
+| --- | --- |
+| PsychoPy `setConnectionState(True)` | `await tracker.setConnectionState(true)` |
+| PsychoPy `runSetupProcedure()` | `await tracker.runSetupProcedure()` |
+| PsychoPy `setRecordingState(True/False)` | `tracker.setRecordingState(true/false)` |
+| PsychoPy `isRecordingEnabled()` | `tracker.isRecordingEnabled()` |
+| PsychoPy `getLastGazePosition()` | `tracker.getLastGazePosition()` |
+| PsychoPy `getPosition()` | `tracker.getPosition()` |
+| EyeLink / PTB `StartSetup` | `await tracker.startSetup()` |
+| EyeLink / PTB `StartRecording` | `tracker.startRecording()` |
+| EyeLink / PTB `StopRecording` | `tracker.stopRecording()` |
+| EyeLink / PTB `Message` | `tracker.sendMessage(message)` or `tracker.message(message)` |
+| EyeLink / PTB `NewestFloatSample` | `tracker.newestFloatSample()` |
+| EyeLink connection close | `tracker.close()` or `await tracker.setConnectionState(false)` |
+
+Browser operations that require permission, model loading, calibration or validation are asynchronous and therefore return promises.
+
+OpenEyeTrack does not emulate EyeLink host-PC commands or EDF transfer. Browser recordings remain OpenEyeTrack sample/event data rather than pretending to be EDF files.
+
+### Trial markers
+
+A familiar EyeLink-style experiment can use:
+
+```ts
+tracker.setTrial("trial-012");
+tracker.sendMessage("TRIALID trial-012");
+tracker.setRecordingState(true);
+
+tracker.sendMessage("STIM_ONSET");
+// present stimulus
+
+tracker.sendMessage("RESPONSE left");
+tracker.sendMessage("TRIAL_RESULT 0");
+tracker.setRecordingState(false);
+```
+
+`sendMessage()` records a timestamped message in the runtime event log and also places the message onto the sample stream as the next event marker.
+
+### Why aliases are useful
+
+The aliases are not intended to make OpenEyeTrack pretend to be an EyeLink device. They reduce the conceptual changes needed when porting an experiment: setup, recording state, messages and live gaze access retain familiar meanings, while the underlying browser tracker remains replaceable.
