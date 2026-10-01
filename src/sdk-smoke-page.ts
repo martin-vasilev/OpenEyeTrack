@@ -1,52 +1,99 @@
 import {
   OPEN_EYE_TRACK_API_VERSION,
-  createOpenEyeTrack
+  OpenEyeTrackRuntime,
+  defaultCalibrationConfig
 } from "./sdk";
 
 const video = document.querySelector<HTMLVideoElement>("#camera")!;
-const startCamera = document.querySelector<HTMLButtonElement>("#start-camera")!;
+const calibrationTarget = document.querySelector<HTMLElement>("#calibration-target")!;
+const connect = document.querySelector<HTMLButtonElement>("#connect")!;
+const setup = document.querySelector<HTMLButtonElement>("#setup")!;
 const startRecording = document.querySelector<HTMLButtonElement>("#start-recording")!;
+const sendMessage = document.querySelector<HTMLButtonElement>("#message")!;
 const stopRecording = document.querySelector<HTMLButtonElement>("#stop-recording")!;
-const stopCamera = document.querySelector<HTMLButtonElement>("#stop-camera")!;
+const disconnect = document.querySelector<HTMLButtonElement>("#disconnect")!;
 const status = document.querySelector<HTMLElement>("#status")!;
 document.querySelector<HTMLElement>("#api-version")!.textContent = OPEN_EYE_TRACK_API_VERSION;
 
-const tracker = createOpenEyeTrack(video);
+const config = {
+  ...defaultCalibrationConfig(),
+  points: 5 as const,
+  repetitions: 1,
+  settleMs: 350,
+  sampleMs: 600,
+  randomize: false,
+  jitterTargets: false
+};
 
-startCamera.onclick = async () => {
+const tracker = new OpenEyeTrackRuntime({
+  video,
+  calibrationTarget,
+  calibrationConfig: config
+});
+
+connect.onclick = async () => {
   try {
-    const settings = await tracker.start({ frameRate: 60 });
-    status.textContent = `Camera started through SDK API v${tracker.apiVersion}.\n${JSON.stringify(settings, null, 2)}`;
-    startCamera.disabled = true;
-    startRecording.disabled = false;
-    stopCamera.disabled = false;
+    const settings = await tracker.setConnectionState(true, { frameRate: 60 });
+    status.textContent = `Connected. isConnected() = ${tracker.isConnected()}\n${JSON.stringify(settings, null, 2)}`;
+    connect.disabled = true;
+    setup.disabled = false;
+    disconnect.disabled = false;
   } catch (error) {
-    status.textContent = `Camera error: ${error instanceof Error ? error.message : String(error)}`;
+    status.textContent = `Connection error: ${error instanceof Error ? error.message : String(error)}`;
+  }
+};
+
+setup.onclick = async () => {
+  setup.disabled = true;
+  status.textContent = "Running quick runSetupProcedure()…";
+  try {
+    const result = await tracker.runSetupProcedure({ config, validate: true });
+    status.textContent =
+      `${result.RESULT}\nCalibration observations: ${result.calibration.observations}\nValidation mean error: ${result.validation?.meanPx.toFixed(1) ?? "n/a"} px\nReady for recording.`;
+    startRecording.disabled = false;
+  } catch (error) {
+    status.textContent = `Setup error: ${error instanceof Error ? error.message : String(error)}`;
+    setup.disabled = false;
   }
 };
 
 startRecording.onclick = () => {
-  tracker.setTrial("sdk-smoke-trial");
-  tracker.mark("recording_start");
-  tracker.startRecording();
+  tracker.setTrial("sdk-runtime-trial-001");
+  tracker.setRecordingState(true);
+  tracker.sendMessage("TRIALID sdk-runtime-trial-001");
+  tracker.sendMessage("RECORDING_START");
   startRecording.disabled = true;
+  sendMessage.disabled = false;
   stopRecording.disabled = false;
-  status.textContent = "Recording sample stream through the stable SDK API…";
+  status.textContent = "Recording. Use the message button to add an EyeLink-style event marker.";
 };
 
-stopRecording.onclick = () => {
-  tracker.mark("recording_stop");
+sendMessage.onclick = () => {
+  tracker.sendMessage("STIM_ONSET");
+  const gaze = tracker.getLastGazePosition();
+  const sample = tracker.newestFloatSample();
+  status.textContent =
+    `STIM_ONSET sent.\nLatest gaze: ${gaze ? gaze.map(v => v.toFixed(1)).join(", ") : "not available"}\nNewest sample frame: ${sample?.frameId ?? "not available"}`;
+};
+
+stopRecording.onclick = async () => {
+  tracker.sendMessage("TRIAL_RESULT 0");
+  await tracker.drain();
   const samples = tracker.stopRecording();
-  stopRecording.disabled = true;
   startRecording.disabled = false;
-  status.textContent = `SDK recording succeeded: ${samples.length} samples.\nFirst sample fields: ${samples[0] ? Object.keys(samples[0]).slice(0, 12).join(", ") : "none"}`;
+  sendMessage.disabled = true;
+  stopRecording.disabled = true;
+  status.textContent =
+    `Recording stopped: ${samples.length} samples, ${tracker.getMessages().length} timestamped messages.\nsetRecordingState/isRecordingEnabled = ${tracker.isRecordingEnabled()}`;
 };
 
-stopCamera.onclick = () => {
-  tracker.stop();
-  startCamera.disabled = false;
+disconnect.onclick = async () => {
+  await tracker.setConnectionState(false);
+  connect.disabled = false;
+  setup.disabled = true;
   startRecording.disabled = true;
+  sendMessage.disabled = true;
   stopRecording.disabled = true;
-  stopCamera.disabled = true;
-  status.textContent = "Camera stopped. SDK smoke test complete.";
+  disconnect.disabled = true;
+  status.textContent = "Disconnected. SDK runtime smoke test complete.";
 };
