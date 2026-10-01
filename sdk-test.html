@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenEyeTrack SDK smoke test</title>
+  <style>
+    body{font-family:system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 20px;color:#172033}
+    video{width:min(640px,100%);aspect-ratio:16/9;background:#111827;border-radius:16px}
+    button{padding:.7rem 1rem;margin:.35rem;border-radius:10px;border:1px solid #cbd5e1;background:white;font-weight:700}
+    #status{white-space:pre-wrap;background:#f8fafc;padding:1rem;border-radius:12px;border:1px solid #e2e8f0}
+  </style>
+</head>
+<body>
+  <h1>OpenEyeTrack SDK smoke test</h1>
+  <p>This page exercises the stable experiment-facing API directly, without the main demo UI.</p>
+  <p>API version: <strong id="api-version"></strong></p>
+  <video id="camera" autoplay muted playsinline></video>
+  <div>
+    <button id="start-camera">Start camera through SDK</button>
+    <button id="start-recording" disabled>Start recording</button>
+    <button id="stop-recording" disabled>Stop recording</button>
+    <button id="stop-camera" disabled>Stop camera</button>
+  </div>
+  <pre id="status">SDK loaded.</pre>
+  <script type="module" src="/src/sdk-smoke-page.ts"></script>
+</body>
+</html>
