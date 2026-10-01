@@ -187,6 +187,7 @@ export class DefaultSetupUI {
 
   showProgress(message: string): void {
     this.mount();
+    this.releasePreview();
     this.root.hidden = false;
     this.card.hidden = true;
     this.progress.hidden = false;
@@ -195,6 +196,7 @@ export class DefaultSetupUI {
 
   showCalibration(round: number, total: number, pose: CalibrationHeadPose): void {
     this.mount();
+    this.releasePreview();
     this.primary.hidden = false;
     this.poseCanvas.hidden = true;
     this.root.hidden = false;
@@ -292,6 +294,7 @@ export class DefaultSetupUI {
 
   async promptPursuit(): Promise<void> {
     this.mount();
+    this.releasePreview();
     this.primary.hidden = false;
     this.poseCanvas.hidden = true;
     this.root.hidden = false;
@@ -314,6 +317,7 @@ export class DefaultSetupUI {
 
   showValidation(): void {
     this.mount();
+    this.releasePreview();
     this.primary.hidden = false;
     this.poseCanvas.hidden = true;
     this.root.hidden = false;
@@ -324,6 +328,7 @@ export class DefaultSetupUI {
 
   async results(validation: ValidationResult | null): Promise<void> {
     this.mount();
+    this.releasePreview();
     this.primary.hidden = false;
     this.poseCanvas.hidden = true;
     this.root.hidden = false;
@@ -355,6 +360,7 @@ export class DefaultSetupUI {
 
   async error(error: unknown): Promise<void> {
     this.mount();
+    this.releasePreview();
     this.primary.hidden = false;
     this.poseCanvas.hidden = true;
     this.root.hidden = false;
@@ -377,12 +383,7 @@ export class DefaultSetupUI {
     this.poseCanvas.hidden = true;
     this.root.querySelector<HTMLDivElement>(".oet-sdk-readiness")?.classList.remove("ready");
     this.root.hidden = true;
-    try {
-      this.preview.pause();
-      this.preview.srcObject = null;
-    } catch {
-      // The preview is cosmetic; failure to stop it must not affect tracking.
-    }
+    this.releasePreview();
     this.restoreExternalTarget();
   }
 
@@ -417,6 +418,15 @@ export class DefaultSetupUI {
     if (stream && this.preview.srcObject !== stream) {
       this.preview.srcObject = stream;
       void this.preview.play().catch(() => undefined);
+    }
+  }
+
+  private releasePreview(): void {
+    try {
+      this.preview.pause();
+      this.preview.srcObject = null;
+    } catch {
+      // The preview is cosmetic; failure to stop it must not affect tracking.
     }
   }
 
