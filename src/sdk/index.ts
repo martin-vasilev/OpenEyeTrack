@@ -42,3 +42,9 @@ export type {
   OpenEyeTrackSetupOptions,
   OpenEyeTrackSetupResult
 } from "./OpenEyeTrackRuntime";
+
+export { resolveOpenEyeTrackAssets } from "../core/AssetPaths";
+export type {
+  OpenEyeTrackAssetConfig,
+  ResolvedOpenEyeTrackAssets
+} from "../core/AssetPaths";
