@@ -46,6 +46,7 @@ export interface OpenEyeTrackAPI {
   startRecording(): void;
   stopRecording(): EyeTrackingSample[];
   getSampleCount(): number;
+  getLastSample(): EyeTrackingSample | null;
 
   setTrial(trialId: string | null): void;
   mark(event: string | null): void;
