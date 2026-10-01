@@ -87,6 +87,9 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <button class="demo-task-card" data-demo-task="text"><span class="task-icon task-icon-text">Aa</span><strong>Read a few pages</strong><span>See how your eyes move across longer, comfortably spaced passages.</span><em>4 pages</em></button>
       <button class="demo-task-card" data-demo-task="proanti"><span class="task-icon task-icon-saccade">↔</span><strong>Pro / anti-saccade</strong><span>Test rapid eye movements toward — or away from — sudden peripheral targets.</span><em>Interactive</em></button>
       <button class="demo-task-card" data-demo-task="stroop"><span class="task-icon task-icon-stroop">RED</span><strong>Stroop task</strong><span>Name the ink colour while ignoring the word and watch where your eyes go.</span><em>12 trials</em></button>
+      <button class="demo-task-card" data-demo-task="visualworld"><span class="task-icon task-icon-world">🔊</span><strong>Visual World</strong><span>Listen to a sentence while four objects compete for your attention.</span><em>6 spoken trials</em></button>
+      <button class="demo-task-card" data-demo-task="visualsearch"><span class="task-icon task-icon-search">⌕</span><strong>Visual search</strong><span>Find the odd target among distractors and see how your search unfolds.</span><em>8 trials</em></button>
+      <button class="demo-task-card" data-demo-task="spotlight"><span class="task-icon task-icon-spotlight">◉</span><strong>Gaze-contingent window</strong><span>Explore pictures through a moving clear window controlled by your gaze.</span><em>4 scenes</em></button>
     </div>
     <p class="demo-gallery-note"><span></span> Gaze recording begins when you open a task. You can switch tasks without losing the session.</p>
   </section>
@@ -110,6 +113,18 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         <div id="stroop-intro" class="task-intro-card"><span class="task-badge">Attention task</span><h3>Stroop colour challenge</h3><p>Respond to the <strong>ink colour</strong>, not the word. Click the matching colour button as quickly as you comfortably can.</p><button id="start-stroop-task" class="primary">Start 12 trials</button></div>
         <div id="stroop-stage" class="stroop-stage" hidden><div id="stroop-progress" class="task-progress"></div><div id="stroop-word" class="stroop-word">BLUE</div><p>What colour is the ink?</p><div id="stroop-choices" class="stroop-choices"><button data-stroop-color="red">Red</button><button data-stroop-color="blue">Blue</button><button data-stroop-color="green">Green</button><button data-stroop-color="orange">Orange</button></div><div id="stroop-feedback" class="stroop-feedback"></div></div>
       </section>
+      <section class="stimulus-panel cognitive-stimulus" data-panel="visualworld">
+        <div id="visualworld-intro" class="task-intro-card"><span class="task-badge">Language + vision</span><h3>Visual World</h3><p>Four objects will appear. After a short preview, you will hear an instruction such as <strong>“Look at the apple.”</strong> Keep looking naturally while the sentence unfolds.</p><button id="start-visualworld-task" class="primary">Start 6 spoken trials</button></div>
+        <div id="visualworld-stage" class="visualworld-stage" hidden><div id="visualworld-progress" class="task-progress"></div><div id="visualworld-grid" class="visualworld-grid"></div><div id="visualworld-prompt" class="visualworld-prompt">Listen…</div></div>
+      </section>
+      <section class="stimulus-panel cognitive-stimulus" data-panel="visualsearch">
+        <div id="visualsearch-intro" class="task-intro-card"><span class="task-badge">Visual attention</span><h3>Visual search</h3><p>Find the <strong>pink T</strong> among the darker L-shaped distractors. Click the target when you find it.</p><button id="start-visualsearch-task" class="primary">Start 8 trials</button></div>
+        <div id="visualsearch-stage" class="visualsearch-stage" hidden><div id="visualsearch-progress" class="task-progress"></div><div id="visualsearch-grid" class="visualsearch-grid"></div><div id="visualsearch-feedback" class="visualsearch-feedback"></div></div>
+      </section>
+      <section class="stimulus-panel cognitive-stimulus" data-panel="spotlight">
+        <div id="spotlight-intro" class="task-intro-card"><span class="task-badge">Gaze contingent</span><h3>Moving-window picture viewing</h3><p>The picture is masked except for a clear circular window centred on your estimated gaze. Move your eyes around the scene to reveal it.</p><button id="start-spotlight-task" class="primary">Start moving-window demo</button></div>
+        <div id="spotlight-stage" class="spotlight-stage" hidden><div class="spotlight-toolbar"><button id="spotlight-prev" aria-label="Previous picture">‹</button><span id="spotlight-caption"></span><button id="spotlight-next" aria-label="Next picture">›</button></div><div id="spotlight-picture" class="spotlight-picture"><img id="spotlight-image" alt=""><div id="spotlight-mask" class="spotlight-mask"></div></div><p class="spotlight-note">Only the region around your gaze is shown clearly.</p></div>
+      </section>
     </main>
     <p class="recording-indicator"><span></span> Recording gaze · move naturally and keep your head in a comfortable position.</p>
   </section>
@@ -117,8 +132,8 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 <div id="demo-results" class="demo-results" hidden><div class="results-wide">
   <div class="results-hero"><div><p class="eyebrow">Demo complete</p><h2>Explore and download your eye-tracking data</h2><p>Your session is still on this device. View the gaze heatmap, then download the raw gaze and calibration files for inspection.</p></div><span id="demo-sample-count" class="sample-pill"></span></div>
   <section class="results-section heatmap-section"><div class="results-section-heading"><div><span class="card-kicker">Gaze heatmap</span><h3>Where did you look?</h3></div></div>
-    <select id="heatmap-filter" hidden><option value="all">All demo activities</option><option value="images">Pictures</option><option value="video">Videos</option><option value="text">Reading</option><option value="proanti">Pro / anti-saccade</option><option value="stroop">Stroop</option></select>
-    <div class="heatmap-filter-buttons" role="group" aria-label="Choose heatmap activity"><button data-heatmap-filter="all" class="active">All</button><button data-heatmap-filter="images">Pictures</button><button data-heatmap-filter="video">Videos</button><button data-heatmap-filter="text">Reading</button><button data-heatmap-filter="proanti">Pro / anti-saccade</button><button data-heatmap-filter="stroop">Stroop</button></div>
+    <select id="heatmap-filter" hidden><option value="all">All demo activities</option><option value="images">Pictures</option><option value="video">Videos</option><option value="text">Reading</option><option value="proanti">Pro / anti-saccade</option><option value="stroop">Stroop</option><option value="visualworld">Visual World</option><option value="visualsearch">Visual Search</option><option value="spotlight">Gaze-contingent</option></select>
+    <div class="heatmap-filter-buttons" role="group" aria-label="Choose heatmap activity"><button data-heatmap-filter="all" class="active">All</button><button data-heatmap-filter="images">Pictures</button><button data-heatmap-filter="video">Videos</button><button data-heatmap-filter="text">Reading</button><button data-heatmap-filter="proanti">Pro / anti-saccade</button><button data-heatmap-filter="stroop">Stroop</button><button data-heatmap-filter="visualworld">Visual World</button><button data-heatmap-filter="visualsearch">Visual Search</button><button data-heatmap-filter="spotlight">Gaze-contingent</button></div>
     <canvas id="heatmap"></canvas>
   </section>
   <section class="results-section data-export-section"><div class="results-section-heading"><div><span class="card-kicker">Data exports</span><h3>Download the session</h3><p>Gaze data contain the demo recording. Calibration and validation files contain the measurements used to assess the tracker.</p></div></div>
@@ -168,6 +183,16 @@ const STROOP_TRIALS=[
 {word:"ORANGE",color:"orange",condition:"congruent"},{word:"BLUE",color:"orange",condition:"incongruent"},
 {word:"RED",color:"orange",condition:"incongruent"},{word:"RED",color:"red",condition:"congruent"}
 ] as const;
+const VISUAL_WORLD_TRIALS=[
+  {sentence:"Look at the apple.",target:"apple",objects:[["apple","🍎"],["book","📘"],["car","🚗"],["dog","🐕"]]},
+  {sentence:"Look at the bicycle.",target:"bicycle",objects:[["clock","🕒"],["bicycle","🚲"],["cake","🍰"],["tree","🌳"]]},
+  {sentence:"Look at the key.",target:"key",objects:[["cup","☕"],["flower","🌻"],["key","🔑"],["fish","🐟"]]},
+  {sentence:"Look at the train.",target:"train",objects:[["train","🚆"],["chair","🪑"],["cat","🐈"],["banana","🍌"]]},
+  {sentence:"Look at the camera.",target:"camera",objects:[["camera","📷"],["shoe","👟"],["house","🏠"],["ball","⚽"]]},
+  {sentence:"Look at the umbrella.",target:"umbrella",objects:[["bird","🐦"],["umbrella","☂️"],["pizza","🍕"],["gift","🎁"]]}
+] as const;
+const VISUAL_SEARCH_TRIALS=8;
+const SPOTLIGHT_IMAGES=DEMO_IMAGES.slice(0,4);
 
 function updateCalibrationFactorUi(){
   const coverage=targetDistributionInput.value==="coverage",runs=Math.max(1,Math.min(5,Number(repetitionsInput.value)||1));
@@ -318,6 +343,7 @@ function runLandmarks(){
       const raw=latestFeatures?calibration.model.predict(latestFeatures):null,filterResult=raw?gazeFilter.filter(raw):null,filtered=filterResult?.gaze??null;
       gazePredictionMs=performance.now()-gazeStarted;
       tracker.setGaze(raw,filtered,filterResult?.outlier??null,filterResult?.rawDeviationPx??null);
+      if(filtered)updateSpotlightWindow(filtered.x,filtered.y);
       if(showGaze.checked&&filtered&&!calibrationActive&&calibrationSetup.hidden&&headWarning.hidden){gazeDot.hidden=false;gazeDot.style.left=`${filtered.x}px`;gazeDot.style.top=`${filtered.y}px`;}else gazeDot.hidden=true;
       const overlayStarted=performance.now();
       overlay.draw(face,latestFeatures,showValues.checked);
@@ -341,11 +367,14 @@ function openDemo(){
   if(recording)void finishRecording("recording_stop");
   gazeDot.hidden=!showGaze.checked;
 }
-const TASK_TITLES:Record<string,string>={images:"Explore pictures",video:"Watch videos",text:"Reading",proanti:"Pro / anti-saccade",stroop:"Stroop task"};
-let activeDemoTask:string|null=null,demoIndices:Record<string,number>={images:0,text:0,video:0},demoTaskToken=0,saccadeMode:"pro"|"anti"="pro",stroopTrial=0,stroopCorrect=0,stroopStartedAt=0;
+const TASK_TITLES:Record<string,string>={images:"Explore pictures",video:"Watch videos",text:"Reading",proanti:"Pro / anti-saccade",stroop:"Stroop task",visualworld:"Visual World",visualsearch:"Visual search",spotlight:"Gaze-contingent window"};
+let activeDemoTask:string|null=null,demoIndices:Record<string,number>={images:0,text:0,video:0},demoTaskToken=0,saccadeMode:"pro"|"anti"="pro",stroopTrial=0,stroopCorrect=0,stroopStartedAt=0,visualWorldTrial=0,visualSearchTrial=0,visualSearchStartedAt=0,spotlightIndex=0;
 const demoImage=q<HTMLImageElement>("#demo-image"),demoImageCaption=q<HTMLElement>("#demo-image-caption"),demoReading=q<HTMLElement>("#demo-reading"),demoVideo=q<HTMLVideoElement>("#demo-video"),demoVideoCaption=q<HTMLElement>("#demo-video-caption");
 const proantiIntro=q<HTMLElement>("#proanti-intro"),saccadeStage=q<HTMLElement>("#saccade-stage"),saccadeProgress=q<HTMLElement>("#saccade-progress"),saccadeFixation=q<HTMLElement>("#saccade-fixation"),saccadeTarget=q<HTMLElement>("#saccade-target"),startSaccadeTask=q<HTMLButtonElement>("#start-saccade-task");
 const stroopIntro=q<HTMLElement>("#stroop-intro"),stroopStage=q<HTMLElement>("#stroop-stage"),stroopProgress=q<HTMLElement>("#stroop-progress"),stroopWord=q<HTMLElement>("#stroop-word"),stroopFeedback=q<HTMLElement>("#stroop-feedback"),startStroopTask=q<HTMLButtonElement>("#start-stroop-task");
+const visualWorldIntro=q<HTMLElement>("#visualworld-intro"),visualWorldStage=q<HTMLElement>("#visualworld-stage"),visualWorldProgress=q<HTMLElement>("#visualworld-progress"),visualWorldGrid=q<HTMLElement>("#visualworld-grid"),visualWorldPrompt=q<HTMLElement>("#visualworld-prompt"),startVisualWorldTask=q<HTMLButtonElement>("#start-visualworld-task");
+const visualSearchIntro=q<HTMLElement>("#visualsearch-intro"),visualSearchStage=q<HTMLElement>("#visualsearch-stage"),visualSearchProgress=q<HTMLElement>("#visualsearch-progress"),visualSearchGrid=q<HTMLElement>("#visualsearch-grid"),visualSearchFeedback=q<HTMLElement>("#visualsearch-feedback"),startVisualSearchTask=q<HTMLButtonElement>("#start-visualsearch-task");
+const spotlightIntro=q<HTMLElement>("#spotlight-intro"),spotlightStage=q<HTMLElement>("#spotlight-stage"),spotlightImage=q<HTMLImageElement>("#spotlight-image"),spotlightMask=q<HTMLElement>("#spotlight-mask"),spotlightCaption=q<HTMLElement>("#spotlight-caption"),startSpotlightTask=q<HTMLButtonElement>("#start-spotlight-task"),spotlightPrev=q<HTMLButtonElement>("#spotlight-prev"),spotlightNext=q<HTMLButtonElement>("#spotlight-next");
 
 function launchDemoTask(name:string){
   if(!(name in TASK_TITLES))return;
@@ -356,6 +385,9 @@ function launchDemoTask(name:string){
   if(name==="images"||name==="text"||name==="video")renderDemoItem(name);
   if(name==="proanti")resetSaccadeTask();
   if(name==="stroop")resetStroopTask();
+  if(name==="visualworld")resetVisualWorldTask();
+  if(name==="visualsearch")resetVisualSearchTask();
+  if(name==="spotlight")resetSpotlightTask();
   updateDemoTrial();
   gazeDot.hidden=!showGaze.checked;
 }
@@ -447,7 +479,59 @@ function answerStroop(answer:string){
   stroopFeedback.textContent=correct?`Correct · ${rt} ms`:`Ink colour: ${target} · ${rt} ms`;tracker.mark(`stroop_response_${trial.condition}_${answer}_${correct?"correct":"incorrect"}_${rt}ms`);
   stroopTrial++;window.setTimeout(()=>{if(activeDemoTask==="stroop")showStroopTrial();},350);
 }
-function stopDemoTaskTimers(){demoTaskToken++;saccadeTarget.hidden=true;saccadeStage.hidden=true;}
+startVisualWorldTask.onclick=()=>{void runVisualWorldTask();};
+function resetVisualWorldTask(){demoTaskToken++;speechSynthesis.cancel();visualWorldTrial=0;visualWorldIntro.hidden=false;visualWorldStage.hidden=true;visualWorldGrid.innerHTML="";visualWorldPrompt.textContent="Listen…";startVisualWorldTask.textContent="Start 6 spoken trials";}
+async function runVisualWorldTask(){
+  const token=++demoTaskToken;visualWorldIntro.hidden=true;visualWorldStage.hidden=false;
+  for(visualWorldTrial=0;visualWorldTrial<VISUAL_WORLD_TRIALS.length;visualWorldTrial++){
+    if(token!==demoTaskToken)return;
+    const t=VISUAL_WORLD_TRIALS[visualWorldTrial];
+    visualWorldProgress.textContent=`Trial ${visualWorldTrial+1} of ${VISUAL_WORLD_TRIALS.length}`;
+    visualWorldPrompt.textContent="Preview the objects…";
+    visualWorldGrid.innerHTML=t.objects.map(([name,emoji],i)=>`<div class="visualworld-object" data-object="${name}" data-aoi="${i+1}"><span>${emoji}</span></div>`).join("");
+    tracker.setTrial(`demo-visualworld-${visualWorldTrial+1}-preview`);tracker.mark(`visualworld_preview_${visualWorldTrial+1}`);
+    await demoWait(1200);if(token!==demoTaskToken)return;
+    visualWorldPrompt.textContent=t.sentence;tracker.setTrial(`demo-visualworld-${visualWorldTrial+1}-spoken`);tracker.mark(`visualworld_sentence_${t.target}`);
+    speechSynthesis.cancel();const utterance=new SpeechSynthesisUtterance(t.sentence);utterance.rate=.9;speechSynthesis.speak(utterance);
+    await demoWait(3000);if(token!==demoTaskToken)return;
+  }
+  speechSynthesis.cancel();visualWorldStage.hidden=true;visualWorldIntro.hidden=false;startVisualWorldTask.textContent="Run 6 trials again";tracker.mark("visualworld_block_complete");tracker.setTrial("demo-visualworld-complete");
+}
+
+startVisualSearchTask.onclick=()=>startVisualSearchBlock();
+function resetVisualSearchTask(){demoTaskToken++;visualSearchTrial=0;visualSearchIntro.hidden=false;visualSearchStage.hidden=true;visualSearchGrid.innerHTML="";visualSearchFeedback.textContent="";startVisualSearchTask.textContent="Start 8 trials";}
+function startVisualSearchBlock(){demoTaskToken++;visualSearchTrial=0;visualSearchIntro.hidden=true;visualSearchStage.hidden=false;showVisualSearchTrial();}
+function showVisualSearchTrial(){
+  if(visualSearchTrial>=VISUAL_SEARCH_TRIALS){visualSearchProgress.textContent="Complete";visualSearchFeedback.textContent="Search block complete";visualSearchGrid.innerHTML="";tracker.mark("visualsearch_complete");tracker.setTrial("demo-visualsearch-complete");return;}
+  const count=48,targetIndex=(visualSearchTrial*17+11)%count;
+  visualSearchProgress.textContent=`Trial ${visualSearchTrial+1} of ${VISUAL_SEARCH_TRIALS} · find the pink T`;visualSearchFeedback.textContent="";
+  visualSearchGrid.innerHTML=Array.from({length:count},(_,i)=>i===targetIndex
+    ?`<button class="search-item search-target" data-search-target="true" aria-label="Target T">T</button>`
+    :`<button class="search-item search-distractor" data-search-target="false" style="--rot:${((i*37+visualSearchTrial*23)%4)*90}deg" aria-label="Distractor L">L</button>`).join("");
+  visualSearchStartedAt=performance.now();tracker.setTrial(`demo-visualsearch-${visualSearchTrial+1}`);tracker.mark(`visualsearch_trial_${visualSearchTrial+1}_target_${targetIndex}`);
+}
+visualSearchGrid.onclick=e=>{
+  const button=(e.target as HTMLElement).closest<HTMLButtonElement>("[data-search-target]");if(!button||visualSearchIntro.hidden===false)return;
+  if(button.dataset.searchTarget==="true"){
+    const rt=Math.round(performance.now()-visualSearchStartedAt);visualSearchFeedback.textContent=`Found · ${rt} ms`;tracker.mark(`visualsearch_found_${rt}ms`);visualSearchTrial++;window.setTimeout(()=>{if(activeDemoTask==="visualsearch")showVisualSearchTrial();},500);
+  }else{visualSearchFeedback.textContent="Keep searching…";tracker.mark("visualsearch_distractor_click");}
+};
+
+startSpotlightTask.onclick=()=>startSpotlightDemo();
+spotlightPrev.onclick=()=>changeSpotlightImage(-1);spotlightNext.onclick=()=>changeSpotlightImage(1);
+function resetSpotlightTask(){spotlightIndex=0;spotlightIntro.hidden=false;spotlightStage.hidden=true;renderSpotlightImage();}
+function startSpotlightDemo(){spotlightIntro.hidden=true;spotlightStage.hidden=false;renderSpotlightImage();tracker.setTrial(`demo-spotlight-${spotlightIndex+1}`);tracker.mark("spotlight_start");}
+function changeSpotlightImage(delta:number){spotlightIndex=(spotlightIndex+delta+SPOTLIGHT_IMAGES.length)%SPOTLIGHT_IMAGES.length;renderSpotlightImage();tracker.setTrial(`demo-spotlight-${spotlightIndex+1}`);tracker.mark(`spotlight_image_${spotlightIndex+1}`);}
+function renderSpotlightImage(){const x=SPOTLIGHT_IMAGES[spotlightIndex%SPOTLIGHT_IMAGES.length];spotlightImage.src=x.src;spotlightImage.alt=x.caption;spotlightCaption.textContent=`${spotlightIndex+1} / ${SPOTLIGHT_IMAGES.length} · ${x.caption}`;}
+function updateSpotlightWindow(viewportX:number,viewportY:number){
+  if(activeDemoTask!=="spotlight"||spotlightStage.hidden)return;
+  const r=spotlightPictureRect();if(!r)return;
+  const x=Math.max(0,Math.min(r.width,viewportX-r.left)),y=Math.max(0,Math.min(r.height,viewportY-r.top));
+  spotlightMask.style.setProperty("--spot-x",`${x}px`);spotlightMask.style.setProperty("--spot-y",`${y}px`);
+}
+function spotlightPictureRect(){const host=spotlightImage.parentElement?.getBoundingClientRect();return host&&host.width>0&&host.height>0?host:null;}
+
+function stopDemoTaskTimers(){demoTaskToken++;speechSynthesis.cancel();saccadeTarget.hidden=true;saccadeStage.hidden=true;}
 
 renderDemoItem("images");renderDemoItem("text");renderDemoItem("video");
 
