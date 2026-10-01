@@ -1,15 +1,12 @@
 import "./style.css";
-import { OpenEyeTrack } from "./core/OpenEyeTrack";
-import { FaceFeatureTracker } from "./features/FaceFeatureTracker";
 import { LandmarkOverlay } from "./features/LandmarkOverlay";
-import { extractEyeHeadFeatures, type EyeHeadFeatures } from "./features/EyeHeadFeatures";
-import { AppearanceGazeTracker, type EyeFeatureModel, type AppearanceGazeFeatures } from "./features/AppearanceGazeTracker";
-import { ElgEyeTracker, type ElgEyeFeatures } from "./features/ElgEyeTracker";
+import type { EyeHeadFeatures } from "./features/EyeHeadFeatures";
+import type { EyeFeatureModel } from "./features/AppearanceGazeTracker";
+import { OpenEyeTrackRuntime, type OpenEyeTrackRuntimeFrame } from "./sdk/OpenEyeTrackRuntime";
 import type { EyeTrackingSample } from "./types/Sample";
-import { CalibrationController, type SavedCalibration, type CalibrationConfig, type CalibrationPointCount, type CalibrationHeadPose, type CalibrationHeadPoseCount, type TargetShape } from "./calibration/CalibrationController";
+import { type SavedCalibration, type CalibrationConfig, type CalibrationPointCount, type CalibrationHeadPose, type CalibrationHeadPoseCount, type TargetShape } from "./calibration/CalibrationController";
 import { DEFAULT_SMOOTH_PURSUIT_CONFIG } from "./calibration/SmoothPursuitCalibration";
 import type { GazeModelType, HeadPoseMode } from "./calibration/GazeModels";
-import { AdaptiveGazeFilter } from "./gaze/AdaptiveGazeFilter";
 import { HeadMovementGuard, type HeadMovementGuardConfig } from "./qc/HeadMovementGuard";
 import { SessionDataManager } from "./data/SessionDataManager";
 
@@ -208,13 +205,15 @@ updateCalibrationFactorUi();
 
 const CALIBRATION_STORAGE_KEY="openeyetrack.calibration.v1";
 const sessionData=new SessionDataManager();
-const tracker=new OpenEyeTrack(video),faceTracker=new FaceFeatureTracker(),appearanceTracker=new AppearanceGazeTracker(),elgTracker=new ElgEyeTracker(),overlay=new LandmarkOverlay(canvas),calibration=new CalibrationController(calibrationTarget,readCalibrationConfig(),sessionData),gazeFilter=new AdaptiveGazeFilter(),headGuard=new HeadMovementGuard(readHeadGuardConfig());
+const overlay=new LandmarkOverlay(canvas),headGuard=new HeadMovementGuard(readHeadGuardConfig());
+const runtime=new OpenEyeTrackRuntime({video,calibrationTarget,calibrationConfig:readCalibrationConfig(),sessionData,onFrame:handleRuntimeFrame});
+const tracker=runtime.core,calibration=runtime.calibration;
 let baselineFace:import("@mediapipe/tasks-vision").NormalizedLandmark[]|null=null,poseReadySince:number|null=null;
-let poorValidationTargets:import("./calibration/CalibrationController").ValidationPointResult[]=[],recording=false,lastRecording:EyeTrackingSample[]=[],statusTimer:number|null=null,detectionAnimation:number|null=null,lastProcessedVideoTime=-1,detectedFaces=0,latestFeatures:EyeHeadFeatures|null=null,latestFace:import("@mediapipe/tasks-vision").NormalizedLandmark[]|null=null,latestAppearance:AppearanceGazeFeatures|null=null,latestElg:ElgEyeFeatures|null=null,calibrationActive=false,headPositionReadySince:number|null=null,headPositionLatched=false;
+let poorValidationTargets:import("./calibration/CalibrationController").ValidationPointResult[]=[],recording=false,lastRecording:EyeTrackingSample[]=[],statusTimer:number|null=null,detectedFaces=0,latestFeatures:EyeHeadFeatures|null=null,latestFace:import("@mediapipe/tasks-vision").NormalizedLandmark[]|null=null,calibrationActive=false,headPositionReadySince:number|null=null,headPositionLatched=false;
 
-startButton.onclick=async()=>{try{status.textContent="Loading face landmark model…";await faceTracker.initialize();status.textContent="Requesting camera permission…";const settings=await tracker.start();placeholder.hidden=true;startButton.disabled=true;stopButton.disabled=false;recordButton.disabled=!calibration.model.calibrated;calibrateButton.disabled=false;runLandmarks();updateStatus(settings);statusTimer=window.setInterval(()=>updateStatus(settings),500);}catch(e){status.textContent=`Startup error: ${e instanceof Error?e.message:String(e)}`;}};
+startButton.onclick=async()=>{try{status.textContent="Loading tracking runtime…";const settings=await runtime.start();placeholder.hidden=true;startButton.disabled=true;stopButton.disabled=false;recordButton.disabled=!calibration.model.calibrated;calibrateButton.disabled=false;updateStatus(settings);statusTimer=window.setInterval(()=>updateStatus(settings),500);}catch(e){status.textContent=`Startup error: ${e instanceof Error?e.message:String(e)}`;}};
 recordButton.onclick=()=>{if(!calibration.model.calibrated)return;if(recording)void finishRecording("recording_stop");else beginRecording();};
-stopButton.onclick=()=>{closeHeadPosition();if(recording)void finishRecording("recording_stop");if(statusTimer!==null)clearInterval(statusTimer);if(detectionAnimation!==null)cancelAnimationFrame(detectionAnimation);faceTracker.close();overlay.clear();tracker.stop();gazeFilter.reset();headGuard.reset();placeholder.hidden=false;startButton.disabled=false;stopButton.disabled=true;recordButton.disabled=true;calibrateButton.disabled=true;validateButton.disabled=true;gazeDot.hidden=true;exportButton.disabled=!lastRecording.length;status.textContent="Camera stopped.";};
+stopButton.onclick=()=>{closeHeadPosition();if(recording)void finishRecording("recording_stop");if(statusTimer!==null)clearInterval(statusTimer);overlay.clear();runtime.stop();headGuard.reset();placeholder.hidden=false;startButton.disabled=false;stopButton.disabled=true;recordButton.disabled=true;calibrateButton.disabled=true;validateButton.disabled=true;gazeDot.hidden=true;exportButton.disabled=!lastRecording.length;status.textContent="Camera stopped.";};
 exportButton.onclick=()=>downloadCsv(lastRecording);
 downloadCalibrationData.onclick=()=>sessionData.downloadCalibration();
 downloadValidationData.onclick=()=>sessionData.downloadValidation();
@@ -227,7 +226,7 @@ demoButton.onclick=()=>openDemo();
 resultsDemo.onclick=()=>{validationResults.hidden=true;openDemo();};
 resultsRecalibrate.onclick=()=>{validationResults.hidden=true;openCalibration();};
 skipRepeatTargets.onclick=()=>{targetRepeatPrompt.hidden=true;};
-repeatBadTargets.onclick=async()=>{if(!poorValidationTargets.length)return;validationResults.hidden=true;calibrationStage.hidden=false;calibrationActive=true;gazeDot.hidden=true;setBusy(true);let revalidate=false;status.textContent=`Repeating ${poorValidationTargets.length} inaccurate validation target${poorValidationTargets.length===1?"":"s"}…`;try{const repeated=poorValidationTargets.length,summary=await calibration.recalibrateTargets(()=>latestFeatures,poorValidationTargets);tracker.setCalibrationSummary(summary);tracker.setCalibrationRun(sessionData.currentCalibrationRun);downloadCalibrationData.disabled=!sessionData.hasCalibrationData;status.textContent=`Targeted recalibration complete: ${repeated} targets repeated. Re-validating the updated model…`;poorValidationTargets=[];revalidate=true;}catch(e){validationResults.hidden=false;status.textContent=`Targeted recalibration error: ${e instanceof Error?e.message:String(e)}`;}finally{calibrationActive=false;calibrationStage.hidden=true;gazeFilter.reset();setBusy(false);}if(revalidate)await runValidation();};
+repeatBadTargets.onclick=async()=>{if(!poorValidationTargets.length)return;validationResults.hidden=true;calibrationStage.hidden=false;calibrationActive=true;gazeDot.hidden=true;setBusy(true);let revalidate=false;status.textContent=`Repeating ${poorValidationTargets.length} inaccurate validation target${poorValidationTargets.length===1?"":"s"}…`;try{const repeated=poorValidationTargets.length,summary=await calibration.recalibrateTargets(()=>latestFeatures,poorValidationTargets);tracker.setCalibrationSummary(summary);tracker.setCalibrationRun(sessionData.currentCalibrationRun);downloadCalibrationData.disabled=!sessionData.hasCalibrationData;status.textContent=`Targeted recalibration complete: ${repeated} targets repeated. Re-validating the updated model…`;poorValidationTargets=[];revalidate=true;}catch(e){validationResults.hidden=false;status.textContent=`Targeted recalibration error: ${e instanceof Error?e.message:String(e)}`;}finally{calibrationActive=false;calibrationStage.hidden=true;runtime.resetGazeFilter();setBusy(false);}if(revalidate)await runValidation();};
 exitDemo.onclick=()=>{void finishDemo(true);};
 finishDemoButton.onclick=()=>{void finishDemo();};
 demoTaskBack.onclick=()=>returnToDemoGallery();
@@ -246,39 +245,35 @@ calibrationValidate.onclick=()=>{postCalibration.hidden=true;void runValidation(
 dismissHeadWarning.onclick=()=>{headWarning.hidden=true;};
 
 startCalibrationButton.onclick=async()=>{
-  console.info("[OpenEyeTrack ELG] Start calibration clicked");
+  console.info("[OpenEyeTrack SDK] Start calibration clicked");
   let config:CalibrationConfig;
-  try{config=readCalibrationConfig();console.info("[OpenEyeTrack ELG] Calibration config",config);}
-  catch(e){console.error("[OpenEyeTrack ELG] Failed to read calibration config",e);status.textContent=`Calibration setup error: ${e instanceof Error?e.message:String(e)}`;return;}
-  setBusy(true);startCalibrationButton.disabled=true;status.textContent=`Loading eye feature model: ${config.featureModel}…`;
+  try{config=readCalibrationConfig();console.info("[OpenEyeTrack SDK] Calibration config",config);}
+  catch(e){status.textContent=`Calibration setup error: ${e instanceof Error?e.message:String(e)}`;return;}
+  setBusy(true);startCalibrationButton.disabled=true;status.textContent=`Preparing ${config.featureModel} eye tracking…`;
   try{
-    latestAppearance=null;latestElg=null;elgTracker.reset();
-    if(config.featureModel==="elg"){
-      console.info("[OpenEyeTrack ELG] Initializing ONNX session");status.textContent="Loading ELG eye-landmark model…";
-      await elgTracker.initialize();
-      console.info("[OpenEyeTrack ELG] ONNX session ready");status.textContent="ELG model loaded. Running first eye-landmark inference…";
-      if(!latestFace)throw new Error("ELG model loaded, but no face landmarks are currently available.");
-      latestElg=await elgTracker.estimate(video,latestFace,true);
-      console.info("[OpenEyeTrack ELG] First inference result",latestElg);
-      if(!latestElg)throw new Error("ELG loaded but did not produce initial eye landmarks.");
-      status.textContent="ELG eye landmarks ready. Starting calibration targets…";
-    }else{
-      console.info("[OpenEyeTrack ELG] Using feature model",config.featureModel);
-      await appearanceTracker.setModel(config.featureModel);
-      if(config.featureModel!=="mediapipe"&&latestFace){latestAppearance=await appearanceTracker.estimate(video,latestFace,true);if(!latestAppearance)throw new Error("The selected appearance model loaded but did not produce an initial gaze estimate.");}
-    }
-    calibration.setConfig(config);calibrationSetup.hidden=true;calibrationStage.hidden=false;calibrationActive=true;gazeFilter.reset();
-    console.info("[OpenEyeTrack ELG] Calibration targets starting");
+    calibrationSetup.hidden=true;calibrationStage.hidden=false;calibrationActive=true;
     baselineFace=latestFace?latestFace.map(p=>({...p})):null;
-    const summary=await calibration.calibrate(()=>latestFeatures,async(round,pose)=>{const total=config.repetitions;if((config.headPoseCount??1)===1){status.textContent=`Calibration run ${round+1} of ${total} · centre head position`;return;}if(round>0)await positionForCalibrationRound(pose,round,total);status.textContent=`Calibration run ${round+1} of ${total} · ${pose} head position`;},async()=>{if((config.headPoseCount??1)>1)await positionForPose("centre","Smooth pursuit: return your head to centre","Return your head to the centre position and hold still before following the moving target.");status.textContent=`Smooth pursuit calibration · follow the target continuously · ${config.smoothPursuit?.speedPxPerSec??100} px/s`;});
-    console.info("[OpenEyeTrack ELG] Calibration complete",summary);
-    tracker.setCalibrationSummary(summary);tracker.setCalibrationRun(sessionData.currentCalibrationRun);downloadCalibrationData.disabled=!sessionData.hasCalibrationData;validateButton.disabled=false;recordButton.disabled=false;demoButton.disabled=true;setStep("validation");postCalibration.hidden=false;status.textContent=`Calibration complete: ${summary.config.model.type} | ${summary.observations} total observations (${summary.newObservations} new + ${summary.retainedObservations} retained) | pursuit observations: ${summary.smoothPursuitObservations??0} | adaptive targets: ${summary.adaptiveUsed?"yes":"no"}.`;
+    const summary=await runtime.calibrate({
+      config,
+      beforeRound:async(round,pose)=>{
+        const total=config.repetitions;
+        if((config.headPoseCount??1)===1){status.textContent=`Calibration run ${round+1} of ${total} · centre head position`;return;}
+        if(round>0)await positionForCalibrationRound(pose,round,total);
+        status.textContent=`Calibration run ${round+1} of ${total} · ${pose} head position`;
+      },
+      beforePursuit:async()=>{
+        if((config.headPoseCount??1)>1)await positionForPose("centre","Smooth pursuit: return your head to centre","Return your head to the centre position and hold still before following the moving target.");
+        status.textContent=`Smooth pursuit calibration · follow the target continuously · ${config.smoothPursuit?.speedPxPerSec??100} px/s`;
+      }
+    });
+    downloadCalibrationData.disabled=!sessionData.hasCalibrationData;validateButton.disabled=false;recordButton.disabled=false;demoButton.disabled=true;setStep("validation");postCalibration.hidden=false;
+    status.textContent=`Calibration complete: ${summary.config.model.type} | ${summary.observations} total observations (${summary.newObservations} new + ${summary.retainedObservations} retained) | pursuit observations: ${summary.smoothPursuitObservations??0} | adaptive targets: ${summary.adaptiveUsed?"yes":"no"}.`;
   }catch(e){
-    console.error("[OpenEyeTrack ELG] Calibration startup failed",e);
+    console.error("[OpenEyeTrack SDK] Calibration failed",e);
     calibrationSetup.hidden=false;status.textContent=`Calibration error: ${e instanceof Error?e.message:String(e)}\nTry MediaPipe iris landmarks if the selected ML model cannot be loaded in this browser.`;
-  }finally{calibrationActive=false;calibrationStage.hidden=true;gazeFilter.reset();setBusy(false);startCalibrationButton.disabled=false;}
+  }finally{calibrationActive=false;calibrationStage.hidden=true;runtime.resetGazeFilter();setBusy(false);startCalibrationButton.disabled=false;}
 };
-async function runValidation(){calibrationStage.hidden=false;calibrationActive=true;gazeDot.hidden=true;setBusy(true);gazeFilter.reset();try{const r=await calibration.validate(()=>latestFeatures);tracker.setValidationResult(r);downloadValidationData.disabled=!sessionData.hasValidationData;metricMean.textContent=`${r.meanPx.toFixed(0)} px`;metricMedian.textContent=`${r.medianPx.toFixed(0)} px`;metricPrecision.textContent=`${r.precisionRmsS2SPx.toFixed(1)} px`;metricValid.textContent=`${((1-r.dataLoss)*100).toFixed(0)}%`;renderValidationMap(r);saveCalibrationToBrowser();poorValidationTargets=adaptiveInput.checked?selectPoorValidationTargets(r):[];targetRepeatPrompt.hidden=poorValidationTargets.length===0;targetRepeatMessage.textContent=poorValidationTargets.length?`${poorValidationTargets.length} validation target${poorValidationTargets.length===1?"":"s"} had substantial error. Would you like to repeat only ${poorValidationTargets.length===1?"this target":"these targets"} and update the calibration model?`:"";validationResults.hidden=false;demoButton.disabled=false;setStep("demo");const model=calibration.calibrationSummary?.config.model.type??"model";status.textContent=`Validation (${model}): mean ${r.meanPx.toFixed(0)} px | median ${r.medianPx.toFixed(0)} px | RMSE ${r.rmsePx.toFixed(0)} px\nPrecision: RMS-S2S ${r.precisionRmsS2SPx.toFixed(1)} px | spatial SD ${r.precisionSdPx.toFixed(1)} px | data loss ${(r.dataLoss*100).toFixed(1)}%\nValidation did not refit the active gaze estimator. Targeted resampling is only offered when explicitly enabled in Advanced calibration settings.`;}catch(e){status.textContent=`Validation error: ${e instanceof Error?e.message:String(e)}`;}finally{calibrationActive=false;calibrationStage.hidden=true;gazeFilter.reset();setBusy(false);}}
+async function runValidation(){calibrationStage.hidden=false;calibrationActive=true;gazeDot.hidden=true;setBusy(true);runtime.resetGazeFilter();try{const r=await runtime.validate();downloadValidationData.disabled=!sessionData.hasValidationData;metricMean.textContent=`${r.meanPx.toFixed(0)} px`;metricMedian.textContent=`${r.medianPx.toFixed(0)} px`;metricPrecision.textContent=`${r.precisionRmsS2SPx.toFixed(1)} px`;metricValid.textContent=`${((1-r.dataLoss)*100).toFixed(0)}%`;renderValidationMap(r);saveCalibrationToBrowser();poorValidationTargets=adaptiveInput.checked?selectPoorValidationTargets(r):[];targetRepeatPrompt.hidden=poorValidationTargets.length===0;targetRepeatMessage.textContent=poorValidationTargets.length?`${poorValidationTargets.length} validation target${poorValidationTargets.length===1?"":"s"} had substantial error. Would you like to repeat only ${poorValidationTargets.length===1?"this target":"these targets"} and update the calibration model?`:"";validationResults.hidden=false;demoButton.disabled=false;setStep("demo");const model=calibration.calibrationSummary?.config.model.type??"model";status.textContent=`Validation (${model}): mean ${r.meanPx.toFixed(0)} px | median ${r.medianPx.toFixed(0)} px | RMSE ${r.rmsePx.toFixed(0)} px\nPrecision: RMS-S2S ${r.precisionRmsS2SPx.toFixed(1)} px | spatial SD ${r.precisionSdPx.toFixed(1)} px | data loss ${(r.dataLoss*100).toFixed(1)}%\nValidation did not refit the active gaze estimator. Targeted resampling is only offered when explicitly enabled in Advanced calibration settings.`;}catch(e){status.textContent=`Validation error: ${e instanceof Error?e.message:String(e)}`;}finally{calibrationActive=false;calibrationStage.hidden=true;runtime.resetGazeFilter();setBusy(false);}}
 validateButton.onclick=()=>{void runValidation();};
 
 async function positionForCalibrationRound(pose:CalibrationHeadPose,round:number,totalRuns:number):Promise<void>{
@@ -296,65 +291,18 @@ function posePositionReady(pose:string){if(!baselineFace||!latestFace)return fal
 function drawPoseGuide(pose:string){const w=video.videoWidth||640,h=video.videoHeight||360;if(posePositionCanvas.width!==w)posePositionCanvas.width=w;if(posePositionCanvas.height!==h)posePositionCanvas.height=h;const ctx=posePositionCanvas.getContext("2d");if(!ctx)return;ctx.clearRect(0,0,w,h);const d=.075,dx=pose==="left"?-d:pose==="right"?d:0,dy=pose==="up"?-d:pose==="down"?d:0;const draw=(pts:import("@mediapipe/tasks-vision").NormalizedLandmark[]|null,color:string,radius:number,shiftX=0,shiftY=0)=>{if(!pts)return;ctx.fillStyle=color;ctx.strokeStyle="rgba(15,23,42,.35)";ctx.lineWidth=.65;for(const p of pts){ctx.beginPath();ctx.arc((1-(p.x+shiftX))*w,(p.y+shiftY)*h,radius,0,Math.PI*2);ctx.fill();ctx.stroke();}};draw(baselineFace,"rgba(245,158,11,.82)",2.15,dx,dy);draw(latestFace,"rgba(14,165,233,.92)",1.75);}
 function renderPoseIllustration(pose:string){const host=q<HTMLElement>("#pose-motion-illustration");const horizontal=pose==="left"||pose==="right";const arrow=pose==="left"?"←":pose==="right"?"→":pose==="up"?"↑":"↓";const shifted=pose==="left"?"translate(-12 0)":pose==="right"?"translate(12 0)":pose==="up"?"rotate(-10 60 48)":"rotate(10 60 48)";const action=horizontal?`Move your whole head slightly ${pose}`:`Tilt your head slightly ${pose}`;const person=(transform="")=>`<svg class="pose-person" viewBox="0 0 120 120" role="img" aria-label="Head position illustration"><g transform="${transform}" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><circle cx="60" cy="39" r="24"/><path d="M48 62v13M72 62v13M32 105c3-20 14-30 28-30s25 10 28 30"/><path d="M51 38h3M66 38h3M55 50c4 3 7 3 11 0"/></g></svg>`;host.innerHTML=`<div class="pose-example"><div><span class="pose-example-label">Start</span>${person()}</div><span class="pose-arrow">${arrow}</span><div><span class="pose-example-label">Target</span>${person(shifted)}</div></div><strong class="pose-caption">${action}</strong><span class="pose-subcaption">Keep looking at the screen while moving your ${horizontal?"whole head":"head"}.</span>`;}
 
-function beginRecording(){headGuard.setConfig(readHeadGuardConfig());headGuard.start(latestFeatures);tracker.startRecording();tracker.setTrial("test");tracker.mark("recording_start");recording=true;recordButton.textContent="Stop recording";exportButton.disabled=true;}
-async function finishRecording(event:string){tracker.mark(event);recording=false;recordButton.textContent="Processing eye data…";await elgTracker.drain();lastRecording=tracker.stopRecording();recordButton.textContent="Start recording";exportButton.disabled=!lastRecording.length;headGuard.reset();}
+function beginRecording(){headGuard.setConfig(readHeadGuardConfig());headGuard.start(latestFeatures);runtime.startRecording();runtime.setTrial("test");runtime.sendMessage("recording_start");recording=true;recordButton.textContent="Stop recording";exportButton.disabled=true;}
+async function finishRecording(event:string){runtime.sendMessage(event);recording=false;recordButton.textContent="Processing eye data…";await runtime.drain();lastRecording=runtime.stopRecording();recordButton.textContent="Start recording";exportButton.disabled=!lastRecording.length;headGuard.reset();}
 function interruptForHeadMovement(reason:string){if(!recording)return;finishRecording("head_movement_interrupt");headWarningText.textContent=`Recording stopped because ${reason}.`;headWarning.hidden=false;status.textContent=`Recording interrupted: ${reason}. ${lastRecording.length} samples retained and available for export.`;}
 
-function runLandmarks(){
-  // requestAnimationFrame follows the display (often 60+ Hz), not the webcam.
-  // Never run MediaPipe/ELG twice against the same 30-Hz camera frame.
-  const videoTime=video.currentTime;
-  if(videoTime===lastProcessedVideoTime){detectionAnimation=requestAnimationFrame(runLandmarks);return;}
-  lastProcessedVideoTime=videoTime;
-  const pipelineStarted=performance.now();
-  const selected=(featureModelInput?.value??"elg")as EyeFeatureModel;
-  const acquisitionMode="queued" as const;
+function handleRuntimeFrame(frame:OpenEyeTrackRuntimeFrame){
+  detectedFaces=frame.detectedFaces;latestFace=frame.face;latestFeatures=frame.features;
   overlay.resizeTo(video);
-
-  const detectStarted=performance.now();
-  const result=faceTracker.detect(video,detectStarted);
-  const mediaPipeDetectMs=performance.now()-detectStarted;
-  let elgEnqueueMs:number|null=null,featureExtractionMs:number|null=null,gazePredictionMs:number|null=null,overlayRenderMs:number|null=null;
-
-  if(result){
-    detectedFaces=result.faceLandmarks.length;
-    const face=result.faceLandmarks[0];
-    if(face){
-      latestFace=face;
-      if(selected==="elg"){
-        const t=performance.now();
-        void elgTracker.estimate(video,face).then(v=>{if(v)latestElg=v;});
-        elgEnqueueMs=performance.now()-t;
-      }else{
-        void appearanceTracker.estimate(video,face).then(v=>{if(v)latestAppearance=v;});
-      }
-      const matrix=result.facialTransformationMatrixes?.[0]?.data;
-      const featureStarted=performance.now();
-      latestFeatures=extractEyeHeadFeatures(face,matrix?Array.from(matrix):undefined);
-      featureExtractionMs=performance.now()-featureStarted;
-      if(latestFeatures&&selected==="elg"&&latestElg){
-        latestFeatures.elgLeftRelX=latestElg.leftRelX;latestFeatures.elgLeftRelY=latestElg.leftRelY;latestFeatures.elgRightRelX=latestElg.rightRelX;latestFeatures.elgRightRelY=latestElg.rightRelY;latestFeatures.elgConfidence=(latestElg.leftConfidence+latestElg.rightConfidence)/2;latestFeatures.elgLeftConfidence=latestElg.leftConfidence;latestFeatures.elgRightConfidence=latestElg.rightConfidence;latestFeatures.elgInferenceMs=latestElg.inferenceMs;latestFeatures.elgTimestampMs=latestElg.timestampMs;latestFeatures.elgAgeMs=Math.max(0,performance.now()-latestElg.acquisitionTimestampMs);latestFeatures.elgSequenceId=latestElg.sequenceId;latestFeatures.elgAcquisitionTimestampMs=latestElg.acquisitionTimestampMs;latestFeatures.elgProcessedTimestampMs=latestElg.processedTimestampMs;latestFeatures.elgLatencyMs=latestElg.latencyMs;latestFeatures.elgQueueDepth=elgTracker.queueDepth;latestFeatures.elgLeftRelXRaw=latestElg.leftRelXRaw;latestFeatures.elgLeftRelYRaw=latestElg.leftRelYRaw;latestFeatures.elgRightRelXRaw=latestElg.rightRelXRaw;latestFeatures.elgRightRelYRaw=latestElg.rightRelYRaw;latestFeatures.elgBinocularReliability=latestElg.binocularReliability;
-      }else if(latestFeatures&&selected!=="mediapipe"&&latestAppearance){
-        latestFeatures.appearanceGazeYaw=latestAppearance.yaw;latestFeatures.appearanceGazePitch=latestAppearance.pitch;
-      }
-      tracker.setFeatures(latestFeatures);
-      if(recording&&latestFeatures){const violation=headGuard.check(latestFeatures);if(violation)interruptForHeadMovement(violation.reason);}
-      const gazeStarted=performance.now();
-      const raw=latestFeatures?calibration.model.predict(latestFeatures):null,filterResult=raw?gazeFilter.filter(raw):null,filtered=filterResult?.gaze??null;
-      gazePredictionMs=performance.now()-gazeStarted;
-      tracker.setGaze(raw,filtered,filterResult?.outlier??null,filterResult?.rawDeviationPx??null);
-      if(filtered)updateSpotlightWindow(filtered.x,filtered.y);
-      if(showGaze.checked&&filtered&&!calibrationActive&&calibrationSetup.hidden&&headWarning.hidden){gazeDot.hidden=false;gazeDot.style.left=`${filtered.x}px`;gazeDot.style.top=`${filtered.y}px`;}else gazeDot.hidden=true;
-      const overlayStarted=performance.now();
-      overlay.draw(face,latestFeatures,showValues.checked);
-      overlayRenderMs=performance.now()-overlayStarted;
-    }else{
-      latestFeatures=null;tracker.setFeatures(null);tracker.setGaze(null);gazeFilter.reset();gazeDot.hidden=true;
-      const overlayStarted=performance.now();overlay.clear();overlayRenderMs=performance.now()-overlayStarted;
-    }
-  }
-  tracker.setPipelineDiagnostics({totalMs:performance.now()-pipelineStarted,mediaPipeDetectMs,elgEnqueueMs,featureExtractionMs,gazePredictionMs,overlayRenderMs,elgAcquisitionMode:acquisitionMode});
-  detectionAnimation=requestAnimationFrame(runLandmarks);
+  if(recording&&latestFeatures){const violation=headGuard.check(latestFeatures);if(violation)interruptForHeadMovement(violation.reason);}
+  const gaze=frame.gaze;
+  if(gaze)updateSpotlightWindow(gaze.x,gaze.y);
+  if(showGaze.checked&&gaze&&!calibrationActive&&calibrationSetup.hidden&&headWarning.hidden){gazeDot.hidden=false;gazeDot.style.left=`${gaze.x}px`;gazeDot.style.top=`${gaze.y}px`;}else gazeDot.hidden=true;
+  if(frame.face&&frame.features)overlay.draw(frame.face,frame.features,showValues.checked);else overlay.clear();
 }
 function navigationLog(message:string){console.info("[OpenEyeTrack navigation]",message);status.textContent=message;}
 function runCalibrationNavigation(label:string,action:()=>void){console.info("[OpenEyeTrack navigation]",label);try{action();console.info("[OpenEyeTrack navigation]",label,"complete");}catch(e){const message=e instanceof Error?e.message:String(e);console.error("[OpenEyeTrack navigation]",label,"failed",e);status.textContent=`Navigation error (${label}): ${message}`;}}
@@ -547,7 +495,7 @@ function screenRegion(x:number,y:number){const v=y<.34?"top":y>.66?"bottom":"mid
 function setStep(name:"camera"|"calibration"|"validation"|"demo"){for(const n of ["camera","calibration","validation","demo"])q<HTMLElement>(`#step-${n}`).classList.toggle("active",n===name);}
 function updateCameraChecks(){const fps=tracker.getObservedFps();const faceOk=detectedFaces===1,eyesOk=latestFeatures!==null,fpsMeasured=fps!==null,fpsGood=(fps??0)>=25,position=facePositionStatus(latestFeatures,headPositionLatched);checkFace.classList.toggle("ok",faceOk);checkEyes.classList.toggle("ok",eyesOk);checkFps.classList.toggle("ok",fpsGood);checkFps.classList.toggle("warn",fpsMeasured&&!fpsGood);checkFpsLabel.textContent=fps?`Camera frame rate (${fps.toFixed(1)} FPS${fpsGood?"":" · low"})`:"Camera frame rate (measuring…)";continueCalibration.disabled=!(faceOk&&eyesOk);const acceptable=faceOk&&eyesOk&&position.ready;if(!headPositionScreen.hidden){if(acceptable){if(headPositionReadySince===null)headPositionReadySince=performance.now();if(performance.now()-headPositionReadySince>=500)headPositionLatched=true;}else if(!position.nearReady){headPositionReadySince=null;headPositionLatched=false;}}headPositionGuide.classList.toggle("ready",headPositionLatched||acceptable);headPositionMessage.classList.toggle("ready",headPositionLatched||acceptable);headPositionMessage.textContent=headPositionLatched?"Good position — continue when ready":position.message;headPositionContinue.disabled=!(faceOk&&eyesOk&&headPositionLatched);}
 function facePositionStatus(f:EyeHeadFeatures|null,relaxed=false){if(!f)return{ready:false,nearReady:false,message:"Position your face inside the guide"};const dx=f.headX-.5,dy=f.headY-.49,size=f.headZ;const xyLimit=relaxed?.16:.14,distanceMin=relaxed?.12:.13,distanceMax=relaxed?.54:.52;const yawLimit=relaxed?18:15,pitchLimit=relaxed?18:14,rollLimit=relaxed?18:15;const centered=Math.abs(dx)<=xyLimit&&Math.abs(dy)<=xyLimit,distanceOk=size>=distanceMin&&size<=distanceMax,yawOk=f.headYaw===null||Math.abs(f.headYaw)<=yawLimit,pitchOk=f.headPitch===null||Math.abs(f.headPitch)<=pitchLimit,rollOk=f.headRoll===null||Math.abs(f.headRoll)<=rollLimit;const ready=centered&&distanceOk&&yawOk&&pitchOk&&rollOk,nearReady=Math.abs(dx)<=.19&&Math.abs(dy)<=.19&&size>=.10&&size<=.58&&(f.headYaw===null||Math.abs(f.headYaw)<=22)&&(f.headPitch===null||Math.abs(f.headPitch)<=22)&&(f.headRoll===null||Math.abs(f.headRoll)<=22);if(!centered){const horizontal=dx<-.10?"Move slightly to your right":dx>.10?"Move slightly to your left":"";const vertical=dy<-.10?"Move slightly down":dy>.10?"Move slightly up":"";return{ready,nearReady,message:[horizontal,vertical].filter(Boolean).join(" · ")||"Centre your face"};}if(!distanceOk)return{ready,nearReady,message:size<distanceMin?"Move a little closer":"Move a little farther away"};if(!pitchOk)return{ready,nearReady,message:(f.headPitch??0)>0?"Lower your chin slightly":"Raise your chin slightly"};if(!yawOk)return{ready,nearReady,message:(f.headYaw??0)>0?"Turn your face slightly left":"Turn your face slightly right"};if(!rollOk)return{ready,nearReady,message:"Keep your head level"};return{ready,nearReady,message:"Good position — hold briefly"};}
-function updateStatus(settings:MediaTrackSettings){updateCameraChecks();if(calibrationActive||!calibrationSetup.hidden||!headWarning.hidden)return;const fps=tracker.getObservedFps(),fd=tracker.getFrameDiagnostics(),model=calibration.calibrationSummary?.config.model.type;status.textContent=["Camera running",`Resolution: ${settings.width??"?"} × ${settings.height??"?"}`,`Observed frame rate: ${fps?.toFixed(1)??"measuring…"} FPS`,`Camera track setting: ${fd.trackFps?.toFixed(1)??"?"} FPS`,`Video presented: ${fd.presentedFps?.toFixed(1)??"measuring…"} FPS`,`Frame callbacks: ${fd.callbackFps?.toFixed(1)??"measuring…"} Hz`,`Missed presented frames: ${fd.missedFrames}`,`Faces detected: ${detectedFaces}`,`Eye feature model: ${calibration.calibrationSummary?.config.featureModel??appearanceTracker.activeModel}`,`ELG acquisition: ${elgTracker.activeAcquisitionMode}`,`Gaze model: ${model??"not calibrated"}${headPoseModeLabel(calibration.calibrationSummary?.config.model)}`,`Calibration memory: ${calibration.hasCalibrationMemory?"available":"none"}`,`Head movement guard: ${headGuardInput.checked?"on":"off"}`,`Samples recorded: ${tracker.getSampleCount()}`].join("\n");}
+function updateStatus(settings:MediaTrackSettings){updateCameraChecks();if(calibrationActive||!calibrationSetup.hidden||!headWarning.hidden)return;const fps=tracker.getObservedFps(),fd=tracker.getFrameDiagnostics(),model=calibration.calibrationSummary?.config.model.type;status.textContent=["Camera running",`Resolution: ${settings.width??"?"} × ${settings.height??"?"}`,`Observed frame rate: ${fps?.toFixed(1)??"measuring…"} FPS`,`Camera track setting: ${fd.trackFps?.toFixed(1)??"?"} FPS`,`Video presented: ${fd.presentedFps?.toFixed(1)??"measuring…"} FPS`,`Frame callbacks: ${fd.callbackFps?.toFixed(1)??"measuring…"} Hz`,`Missed presented frames: ${fd.missedFrames}`,`Faces detected: ${detectedFaces}`,`Eye feature model: ${calibration.calibrationSummary?.config.featureModel??runtime.getFeatureModel()}`,`ELG acquisition: ${runtime.getAcquisitionMode()}`,`Gaze model: ${model??"not calibrated"}${headPoseModeLabel(calibration.calibrationSummary?.config.model)}`,`Calibration memory: ${calibration.hasCalibrationMemory?"available":"none"}`,`Head movement guard: ${headGuardInput.checked?"on":"off"}`,`Samples recorded: ${tracker.getSampleCount()}`].join("\n");}
 function headPoseModeLabel(modelConfig:CalibrationConfig["model"]|undefined){
   if(!modelConfig)return"";
   const mode=modelConfig.headPoseMode??(modelConfig.includeHeadPose?"position_orientation":"off");
