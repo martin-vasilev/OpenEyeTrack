@@ -235,3 +235,70 @@ console.log(tracker.getAssetUrls());
 This is intended to let the same SDK bundle run under GitHub Pages, JATOS, Pavlovia, university web servers, or other browser experiment hosts without editing OpenEyeTrack source code.
 
 The MediaPipe face-landmarker model remains remotely hosted by default, but `faceLandmarkerModelUrl` can be overridden for fully controlled/self-hosted deployments.
+
+
+## Self-contained setup UI
+
+External experiments no longer need to create a calibration target element.
+
+The simplest integration is now:
+
+```ts
+const tracker = new OpenEyeTrackRuntime({
+  video,
+  assetBaseUrl: "/openeyetrack/"
+});
+
+await tracker.setConnectionState(true);
+
+const setup = await tracker.runSetupProcedure({
+  ui: "default"
+});
+
+tracker.setRecordingState(true);
+```
+
+When `calibrationTarget` is omitted, `runSetupProcedure()` defaults to the SDK-owned UI automatically, so this is also valid:
+
+```ts
+const tracker = new OpenEyeTrackRuntime({ video });
+
+await tracker.setConnectionState(true);
+await tracker.runSetupProcedure();
+```
+
+The default UI temporarily overlays the experiment page and guides the participant through:
+
+1. camera/face positioning;
+2. calibration;
+3. optional instructed head-pose changes when configured;
+4. optional smooth-pursuit calibration when configured;
+5. validation;
+6. a validation-quality summary;
+7. return to the host experiment.
+
+The overlay uses scoped SDK styles and is hidden when setup finishes. It does not require the OpenEyeTrack demo stylesheet.
+
+### Host-controlled setup UI
+
+Advanced platforms can still provide their own calibration target and presentation:
+
+```ts
+const tracker = new OpenEyeTrackRuntime({
+  video,
+  calibrationTarget: document.querySelector("#my-target")
+});
+
+await tracker.runSetupProcedure({
+  ui: "none",
+  beforeRound: async (round, pose) => {
+    // host platform controls instructions / positioning
+  }
+});
+```
+
+This keeps the lower-level setup path available for specialised jsPsych, PsychoJS, Gorilla or bespoke integrations while providing a zero-scaffolding default for simpler experiments.
+
+### Cancellation
+
+If a participant cancels the built-in setup screen, the returned promise rejects with `OpenEyeTrackSetupCancelledError`. The host experiment can catch this and decide whether to retry, show instructions, or terminate the session.
