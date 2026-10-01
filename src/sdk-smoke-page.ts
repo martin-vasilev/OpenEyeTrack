@@ -5,7 +5,6 @@ import {
 } from "./sdk";
 
 const video = document.querySelector<HTMLVideoElement>("#camera")!;
-const calibrationTarget = document.querySelector<HTMLElement>("#calibration-target")!;
 const connect = document.querySelector<HTMLButtonElement>("#connect")!;
 const setup = document.querySelector<HTMLButtonElement>("#setup")!;
 const startRecording = document.querySelector<HTMLButtonElement>("#start-recording")!;
@@ -27,7 +26,6 @@ const config = {
 
 const tracker = new OpenEyeTrackRuntime({
   video,
-  calibrationTarget,
   calibrationConfig: config,
   assetBaseUrl: new URL("./", document.baseURI).href
 });
@@ -48,7 +46,7 @@ setup.onclick = async () => {
   setup.disabled = true;
   status.textContent = "Running quick runSetupProcedure()…";
   try {
-    const result = await tracker.runSetupProcedure({ config, validate: true });
+    const result = await tracker.runSetupProcedure({ config, validate: true, ui: "default" });
     status.textContent =
       `${result.RESULT}\nCalibration observations: ${result.calibration.observations}\nValidation mean error: ${result.validation?.meanPx.toFixed(1) ?? "n/a"} px\nReady for recording.`;
     startRecording.disabled = false;
