@@ -10,6 +10,8 @@ import {
   type CalibrationConfig,
   type CalibrationHeadPose,
   type CalibrationSummary,
+  type SavedCalibration,
+  type ValidationPointResult,
   type ValidationResult
 } from "../calibration/CalibrationController";
 import { DEFAULT_SMOOTH_PURSUIT_CONFIG } from "../calibration/SmoothPursuitCalibration";
@@ -185,6 +187,27 @@ export class OpenEyeTrackRuntime {
     this.core.setValidationResult(result);
     this.gazeFilter.reset();
     return result;
+  }
+
+  async recalibrateTargets(points: ValidationPointResult[]): Promise<CalibrationSummary> {
+    const summary = await this.calibration.recalibrateTargets(() => this.latestFeatures, points);
+    this.core.setCalibrationSummary(summary);
+    this.core.setCalibrationRun(this.sessionData.currentCalibrationRun);
+    this.gazeFilter.reset();
+    return summary;
+  }
+
+  exportSavedCalibration(): SavedCalibration | null {
+    return this.calibration.exportSavedCalibration();
+  }
+
+  restoreSavedCalibration(saved: SavedCalibration): void {
+    this.calibration.restoreSavedCalibration(saved);
+    this.config = cloneConfig(saved.config);
+    const summary = this.calibration.calibrationSummary;
+    if (summary) this.core.setCalibrationSummary(summary);
+    this.core.setCalibrationRun(this.sessionData.currentCalibrationRun);
+    this.gazeFilter.reset();
   }
 
   async runSetupProcedure(options: OpenEyeTrackSetupOptions = {}): Promise<OpenEyeTrackSetupResult> {
