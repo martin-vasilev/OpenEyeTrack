@@ -1,4 +1,11 @@
+import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
 import type { CalibrationConfig, CalibrationHeadPose, ValidationResult } from "../calibration/CalibrationController";
+import type { EyeHeadFeatures } from "../features/EyeHeadFeatures";
+import {
+  drawPoseAlignmentGuide,
+  evaluateNeutralHeadPosition,
+  evaluatePoseAlignment
+} from "./HeadPositioning";
 
 export class OpenEyeTrackSetupCancelledError extends Error {
   constructor() {
@@ -18,6 +25,7 @@ export class DefaultSetupUI {
 
   private readonly root: HTMLDivElement;
   private readonly preview: HTMLVideoElement;
+  private readonly poseCanvas: HTMLCanvasElement;
   private readonly card: HTMLDivElement;
   private readonly eyebrow: HTMLParagraphElement;
   private readonly title: HTMLHeadingElement;
@@ -51,7 +59,9 @@ export class DefaultSetupUI {
         .oet-sdk-message{margin:0;color:#46546a;font-size:1.02rem;line-height:1.55}
         .oet-sdk-preview-wrap{margin:22px auto 0;width:min(560px,100%);aspect-ratio:16/9;border-radius:16px;background:#111827;overflow:hidden;position:relative}
         .oet-sdk-preview{width:100%;height:100%;object-fit:contain;transform:scaleX(-1)}
-        .oet-sdk-readiness{position:absolute;left:12px;bottom:12px;padding:7px 10px;border-radius:999px;background:rgba(15,23,42,.86);color:white;font-weight:750;font-size:.85rem}
+        .oet-sdk-pose-canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+        .oet-sdk-readiness{position:absolute;left:12px;right:12px;bottom:12px;padding:8px 11px;border-radius:10px;background:rgba(15,23,42,.86);color:white;font-weight:750;font-size:.85rem;text-align:center}
+        .oet-sdk-readiness.ready{background:rgba(4,120,87,.92)}
         .oet-sdk-actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:24px}
         .oet-sdk-button{appearance:none;border:1px solid #cbd5e1;background:white;color:#172033;padding:.75rem 1rem;border-radius:10px;font:inherit;font-weight:800;cursor:pointer}
         .oet-sdk-button-primary{background:#172033;color:white;border-color:#172033}
@@ -81,6 +91,7 @@ export class DefaultSetupUI {
           <p class="oet-sdk-message"></p>
           <div class="oet-sdk-preview-wrap">
             <video class="oet-sdk-preview" autoplay muted playsinline></video>
+            <canvas class="oet-sdk-pose-canvas" hidden></canvas>
             <div class="oet-sdk-readiness">Checking camera…</div>
           </div>
           <div class="oet-sdk-metrics" hidden></div>
@@ -94,6 +105,7 @@ export class DefaultSetupUI {
     `;
 
     this.preview = this.root.querySelector<HTMLVideoElement>(".oet-sdk-preview")!;
+    this.poseCanvas = this.root.querySelector<HTMLCanvasElement>(".oet-sdk-pose-canvas")!;
     this.card = this.root.querySelector<HTMLDivElement>(".oet-sdk-setup-card")!;
     this.eyebrow = this.root.querySelector<HTMLParagraphElement>(".oet-sdk-eyebrow")!;
     this.title = this.root.querySelector<HTMLHeadingElement>(".oet-sdk-title")!;
@@ -115,7 +127,7 @@ export class DefaultSetupUI {
 
   async intro(
     config: CalibrationConfig,
-    isReady: () => boolean,
+    getFeatures: () => EyeHeadFeatures | null,
     detectedFaces: () => number
   ): Promise<void> {
     this.mount();
@@ -124,6 +136,7 @@ export class DefaultSetupUI {
     this.progress.hidden = true;
     this.metrics.hidden = true;
     this.preview.parentElement!.hidden = false;
+    this.poseCanvas.hidden = true;
     this.eyebrow.textContent = "OpenEyeTrack setup";
     this.title.textContent = "Position yourself for eye tracking";
     this.message.textContent =
@@ -135,18 +148,35 @@ export class DefaultSetupUI {
     this.syncPreview();
 
     const readiness = this.root.querySelector<HTMLDivElement>(".oet-sdk-readiness")!;
+    let readySince: number | null = null;
+    let latched = false;
+
     const refresh = () => {
-      const ready = isReady();
       const faces = detectedFaces();
+      const position = evaluateNeutralHeadPosition(getFeatures(), latched);
+      const acceptable = faces === 1 && position.ready;
+
+      if (acceptable) {
+        if (readySince === null) readySince = performance.now();
+        if (performance.now() - readySince >= 500) latched = true;
+      } else if (!position.nearReady) {
+        readySince = null;
+        latched = false;
+      }
+
+      const ready = faces === 1 && latched;
       this.primary.disabled = !ready;
-      readiness.textContent = ready
-        ? "Face detected · ready"
-        : faces > 1
-          ? "Please keep only one face in view"
-          : "Centre your face in the camera";
+      readiness.classList.toggle("ready", ready || acceptable);
+
+      if (faces > 1) readiness.textContent = "Please keep only one face in view";
+      else if (faces === 0) readiness.textContent = "Position your face inside the guide";
+      else if (ready) readiness.textContent = "Good position — continue when ready";
+      else if (acceptable) readiness.textContent = "Good position — hold…";
+      else readiness.textContent = position.message;
     };
+
     refresh();
-    const timer = window.setInterval(refresh, 150);
+    const timer = window.setInterval(refresh, 100);
 
     try {
       await this.waitForPrimaryOrCancel();
@@ -165,10 +195,79 @@ export class DefaultSetupUI {
 
   showCalibration(round: number, total: number, pose: CalibrationHeadPose): void {
     this.mount();
+    this.primary.hidden = false;
+    this.poseCanvas.hidden = true;
     this.root.hidden = false;
     this.card.hidden = true;
     this.progress.hidden = false;
     this.progress.textContent = `Calibration run ${round + 1} of ${total} · ${poseLabel(pose)}`;
+  }
+
+  async guidePose(
+    round: number,
+    total: number,
+    pose: CalibrationHeadPose,
+    baseline: NormalizedLandmark[] | null,
+    getCurrentFace: () => NormalizedLandmark[] | null
+  ): Promise<void> {
+    if (!baseline) {
+      await this.promptPose(round, total, pose);
+      return;
+    }
+
+    this.mount();
+    this.root.hidden = false;
+    this.card.hidden = false;
+    this.progress.hidden = true;
+    this.metrics.hidden = true;
+    this.preview.parentElement!.hidden = false;
+    this.poseCanvas.hidden = false;
+    this.eyebrow.textContent = `Calibration run ${round + 1} of ${total}`;
+    this.title.textContent = poseTitle(pose);
+    this.message.textContent =
+      `${poseInstruction(pose)} Align the blue live mesh with the amber target mesh, then hold still.`;
+    this.primary.hidden = true;
+    this.secondary.hidden = true;
+    this.syncPreview();
+
+    const readiness = this.root.querySelector<HTMLDivElement>(".oet-sdk-readiness")!;
+    readiness.classList.remove("ready");
+    readiness.textContent = "Align your face with the amber target mesh";
+
+    await new Promise<void>(resolve => {
+      let readySince: number | null = null;
+      let animationId = 0;
+
+      const tick = () => {
+        const current = getCurrentFace();
+        drawPoseAlignmentGuide(this.poseCanvas, this.preview, baseline, current, pose);
+        const alignment = evaluatePoseAlignment(baseline, current, pose);
+
+        if (alignment.ready) {
+          if (readySince === null) readySince = performance.now();
+          readiness.classList.add("ready");
+          readiness.textContent = "Good position — hold…";
+          if (performance.now() - readySince >= 650) {
+            cancelAnimationFrame(animationId);
+            this.poseCanvas.hidden = true;
+            this.primary.hidden = false;
+            this.showCalibration(round, total, pose);
+            resolve();
+            return;
+          }
+        } else {
+          readySince = null;
+          readiness.classList.remove("ready");
+          readiness.textContent = current
+            ? "Align your face with the amber target mesh"
+            : "Keep your face visible to the camera";
+        }
+
+        animationId = requestAnimationFrame(tick);
+      };
+
+      tick();
+    });
   }
 
   async promptPose(round: number, total: number, pose: CalibrationHeadPose): Promise<void> {
@@ -178,9 +277,11 @@ export class DefaultSetupUI {
     this.progress.hidden = true;
     this.metrics.hidden = true;
     this.preview.parentElement!.hidden = false;
+    this.poseCanvas.hidden = true;
     this.eyebrow.textContent = `Calibration run ${round + 1} of ${total}`;
     this.title.textContent = poseTitle(pose);
     this.message.textContent = poseInstruction(pose);
+    this.primary.hidden = false;
     this.primary.textContent = "Continue";
     this.secondary.hidden = true;
     this.primary.disabled = false;
@@ -191,6 +292,8 @@ export class DefaultSetupUI {
 
   async promptPursuit(): Promise<void> {
     this.mount();
+    this.primary.hidden = false;
+    this.poseCanvas.hidden = true;
     this.root.hidden = false;
     this.card.hidden = false;
     this.progress.hidden = true;
@@ -211,6 +314,8 @@ export class DefaultSetupUI {
 
   showValidation(): void {
     this.mount();
+    this.primary.hidden = false;
+    this.poseCanvas.hidden = true;
     this.root.hidden = false;
     this.card.hidden = true;
     this.progress.hidden = false;
@@ -219,6 +324,8 @@ export class DefaultSetupUI {
 
   async results(validation: ValidationResult | null): Promise<void> {
     this.mount();
+    this.primary.hidden = false;
+    this.poseCanvas.hidden = true;
     this.root.hidden = false;
     this.card.hidden = false;
     this.progress.hidden = true;
@@ -248,6 +355,8 @@ export class DefaultSetupUI {
 
   async error(error: unknown): Promise<void> {
     this.mount();
+    this.primary.hidden = false;
+    this.poseCanvas.hidden = true;
     this.root.hidden = false;
     this.card.hidden = false;
     this.progress.hidden = true;
@@ -265,6 +374,8 @@ export class DefaultSetupUI {
 
   hide(): void {
     this.target.hidden = true;
+    this.poseCanvas.hidden = true;
+    this.root.querySelector<HTMLDivElement>(".oet-sdk-readiness")?.classList.remove("ready");
     this.root.hidden = true;
     try {
       this.preview.pause();
