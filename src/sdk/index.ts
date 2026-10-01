@@ -29,3 +29,16 @@ export function createOpenEyeTrack(video: HTMLVideoElement): OpenEyeTrackAPI {
 export function isCompatibleOpenEyeTrackApi(version: string): boolean {
   return version === OPEN_EYE_TRACK_API_VERSION;
 }
+
+export {
+  OpenEyeTrackRuntime,
+  defaultCalibrationConfig
+} from "./OpenEyeTrackRuntime";
+
+export type {
+  OpenEyeTrackMessage,
+  OpenEyeTrackRuntimeFrame,
+  OpenEyeTrackRuntimeOptions,
+  OpenEyeTrackSetupOptions,
+  OpenEyeTrackSetupResult
+} from "./OpenEyeTrackRuntime";
