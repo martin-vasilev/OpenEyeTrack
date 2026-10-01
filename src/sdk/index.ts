@@ -48,3 +48,8 @@ export type {
   OpenEyeTrackAssetConfig,
   ResolvedOpenEyeTrackAssets
 } from "../core/AssetPaths";
+
+export {
+  DefaultSetupUI,
+  OpenEyeTrackSetupCancelledError
+} from "./DefaultSetupUI";
