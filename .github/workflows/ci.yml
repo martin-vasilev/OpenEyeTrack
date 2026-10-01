@@ -23,6 +23,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: SDK contract smoke test
+        run: npm run test:sdk
+
       - name: Download gaze models
         run: |
           mkdir -p public/models
