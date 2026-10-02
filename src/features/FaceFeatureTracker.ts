@@ -56,8 +56,22 @@ export class FaceFeatureTracker {
     if (this.initialized) return;
     if (this.initializePromise) return this.initializePromise;
     resetMediaPipeDiagnostics();
-    const workerUrl = this.options.workerUrl ?? new URL("./FaceLandmarker.worker.ts", import.meta.url);
-    this.worker = new Worker(workerUrl, { type: "module" });
+    // Keep the application worker in Vite's statically-recognisable form.
+    // Vite production builds only bundle a worker correctly when the
+    // new Worker(new URL(..., import.meta.url)) expression is visible
+    // directly. The SDK can still bypass that bundled worker by supplying
+    // its stable packaged worker URL explicitly.
+    let workerLabel: string;
+    if (this.options.workerUrl) {
+      workerLabel = this.options.workerUrl;
+      this.worker = new Worker(this.options.workerUrl, { type: "module" });
+    } else {
+      workerLabel = "Vite-bundled FaceLandmarker.worker";
+      this.worker = new Worker(
+        new URL("./FaceLandmarker.worker.ts", import.meta.url),
+        { type: "module" }
+      );
+    }
     this.initializePromise = new Promise<void>((resolve, reject) => {
       this.resolveInitialize = resolve;
       this.rejectInitialize = reject;
@@ -120,7 +134,7 @@ export class FaceFeatureTracker {
     this.worker.onerror = event => {
       this.detectionInFlight = false;
       const detail = event.message || "worker script could not be loaded or executed";
-      const error = new Error(`MediaPipe worker failed (${String(workerUrl)}): ${detail}`);
+      const error = new Error(`MediaPipe worker failed (${workerLabel}): ${detail}`);
       if (!this.initialized) {
         this.rejectInitialize?.(error);
         this.resolveInitialize = null;
