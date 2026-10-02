@@ -23,19 +23,27 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Download gaze models
-        run: |
-          mkdir -p public/models
-          curl -L --fail --retry 3 -o public/models/gazeml_elg_i60x36_n32.onnx https://storage.googleapis.com/ailia-models/gazeml/gazeml_elg_i60x36_n32.onnx
-          curl -L --fail --retry 3 -o public/models/mobileone_s0_gaze.onnx https://github.com/yakhyo/gaze-estimation/releases/download/weights/mobileone_s0_gaze.onnx
-          curl -L --fail --retry 3 -o public/models/resnet34_gaze.onnx https://github.com/yakhyo/gaze-estimation/releases/download/weights/resnet34_gaze.onnx
+      - name: SDK contract smoke test
+        run: npm run test:sdk
 
-      - name: Copy browser runtime assets
+      - name: Build distributable SDK package
         run: |
-          mkdir -p public/ort public/mediapipe/wasm
-          cp node_modules/onnxruntime-web/dist/ort-wasm*.wasm public/ort/
-          cp node_modules/onnxruntime-web/dist/ort-wasm*.mjs public/ort/
-          cp -R node_modules/@mediapipe/tasks-vision/wasm/. public/mediapipe/wasm/
+          npm run package:sdk
+          npm run verify:sdk-package
+
+      - name: Verify repository-independent SDK kit
+        run: |
+          node scripts/build-portable-sdk-test.mjs
+          npm run verify:sdk-portable-test
+
+      - name: Stage browser runtime assets
+        run: |
+          mkdir -p public
+          cp -R dist-sdk/models public/
+          cp -R dist-sdk/ort public/
+          mkdir -p public/mediapipe
+          cp -R dist-sdk/mediapipe/wasm public/mediapipe/
+          test -f public/models/face_landmarker.task
           test -f public/mediapipe/wasm/vision_wasm_module_internal.js
           test -f public/mediapipe/wasm/vision_wasm_module_internal.wasm
 

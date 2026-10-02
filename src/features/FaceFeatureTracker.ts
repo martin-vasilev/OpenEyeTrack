@@ -6,6 +6,13 @@ export interface FaceFeatures {
   timestamp: number;
 }
 
+export interface FaceFeatureTrackerOptions {
+  mediapipeWasmBaseUrl?: string;
+  faceLandmarkerModelUrl?: string;
+  /** Explicit worker URL used by distributable SDK deployments. */
+  workerUrl?: string;
+}
+
 interface CachedFaceResult {
   faceLandmarks: NormalizedLandmark[][];
   facialTransformationMatrixes: Array<{ rows: number; columns: number; data: number[] }>;
@@ -43,11 +50,28 @@ export class FaceFeatureTracker {
   private sequenceId = 0;
   private bitmapReadyBySequence = new Map<number, number>();
 
+  constructor(private readonly options: FaceFeatureTrackerOptions = {}) {}
+
   async initialize(): Promise<void> {
     if (this.initialized) return;
     if (this.initializePromise) return this.initializePromise;
     resetMediaPipeDiagnostics();
-    this.worker = new Worker(new URL("./FaceLandmarker.worker.ts", import.meta.url), { type: "module" });
+    // Keep the application worker in Vite's statically-recognisable form.
+    // Vite production builds only bundle a worker correctly when the
+    // new Worker(new URL(..., import.meta.url)) expression is visible
+    // directly. The SDK can still bypass that bundled worker by supplying
+    // its stable packaged worker URL explicitly.
+    let workerLabel: string;
+    if (this.options.workerUrl) {
+      workerLabel = this.options.workerUrl;
+      this.worker = new Worker(this.options.workerUrl, { type: "module" });
+    } else {
+      workerLabel = "Vite-bundled FaceLandmarker.worker";
+      this.worker = new Worker(
+        new URL("./FaceLandmarker.worker.ts", import.meta.url),
+        { type: "module" }
+      );
+    }
     this.initializePromise = new Promise<void>((resolve, reject) => {
       this.resolveInitialize = resolve;
       this.rejectInitialize = reject;
@@ -109,7 +133,8 @@ export class FaceFeatureTracker {
     };
     this.worker.onerror = event => {
       this.detectionInFlight = false;
-      const error = new Error(event.message || "MediaPipe worker failed.");
+      const detail = event.message || "worker script could not be loaded or executed";
+      const error = new Error(`MediaPipe worker failed (${workerLabel}): ${detail}`);
       if (!this.initialized) {
         this.rejectInitialize?.(error);
         this.resolveInitialize = null;
@@ -117,7 +142,11 @@ export class FaceFeatureTracker {
         this.initializePromise = null;
       } else console.error("[OpenEyeTrack MediaPipe worker]", error);
     };
-    this.worker.postMessage({ type: "initialize" });
+    this.worker.postMessage({
+      type: "initialize",
+      mediapipeWasmBaseUrl: this.options.mediapipeWasmBaseUrl,
+      faceLandmarkerModelUrl: this.options.faceLandmarkerModelUrl
+    });
     return this.initializePromise;
   }
 

@@ -185,7 +185,9 @@ npm install
 npm run dev
 ```
 
-The repository does not commit all large model/runtime assets directly. The GitHub Pages workflow provisions the current ELG/MobileGaze model files, ONNX Runtime browser files and MediaPipe WASM assets before building.
+`npm run dev` now prepares the browser runtime assets automatically before starting Vite. It reuses models from an existing `dist-sdk/` package when available and otherwise downloads only missing model files. Local development is served from the localhost root, while production builds retain the GitHub Pages `/OpenEyeTrack/` base path.
+
+The repository does not commit all large model/runtime assets directly. The GitHub Pages workflow also provisions the current ELG/MobileGaze model files, ONNX Runtime browser files and MediaPipe WASM assets before building.
 
 For a production-equivalent local build, mirror the asset-provisioning steps in:
 

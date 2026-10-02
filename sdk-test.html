@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenEyeTrack SDK runtime test</title>
+  <style>
+    body{font-family:system-ui,sans-serif;max-width:960px;margin:40px auto;padding:0 20px;color:#172033}
+    video{width:min(640px,100%);aspect-ratio:16/9;background:#111827;border-radius:16px}
+    button{padding:.7rem 1rem;margin:.35rem;border-radius:10px;border:1px solid #cbd5e1;background:white;font-weight:700}
+    button.primary{background:#172033;color:white}
+    button:disabled{opacity:.45}
+    #status{white-space:pre-wrap;background:#f8fafc;padding:1rem;border-radius:12px;border:1px solid #e2e8f0}
+    [hidden]{display:none!important}
+  </style>
+</head>
+<body>
+  <h1>OpenEyeTrack SDK runtime test</h1>
+  <p>This page exercises the reusable experiment runtime rather than the main OpenEyeTrack demo UI.</p>
+  <p>API version: <strong id="api-version"></strong></p>
+  <video id="camera" autoplay muted playsinline></video>
+  <div>
+    <button id="connect" class="primary">Connect / start camera</button>
+    <button id="setup" disabled>Run 3-pose setup</button>
+    <button id="start-recording" disabled>Start recording</button>
+    <button id="message" disabled>Send STIM_ONSET message</button>
+    <button id="stop-recording" disabled>Stop recording</button>
+    <button id="disconnect" disabled>Disconnect</button>
+  </div>
+  <pre id="status">SDK runtime loaded.</pre>
+  <script type="module" src="/src/sdk-smoke-page.ts"></script>
+</body>
+</html>

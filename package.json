@@ -1,22 +1,46 @@
 {
   "name": "openeyetrack",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Browser-native webcam eye tracking for behavioural research",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/prepare-dev-assets.mjs && vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:sdk": "vite build --config vite.config.sdk.ts && vite build --config vite.config.worker.ts && tsc -p tsconfig.sdk.json",
+    "test:sdk": "npm run build:sdk && node scripts/sdk-smoke.mjs",
+    "build:all": "npm run build && npm run build:sdk",
+    "package:sdk": "npm run build:sdk && node scripts/package-sdk.mjs",
+    "verify:sdk-package": "node scripts/verify-sdk-package.mjs",
+    "pack:sdk": "npm run package:sdk && npm run verify:sdk-package && node scripts/pack-sdk.mjs",
+    "build:sdk-portable-test": "npm run package:sdk && node scripts/build-portable-sdk-test.mjs && node scripts/verify-sdk-portable-test.mjs",
+    "verify:sdk-portable-test": "node scripts/verify-sdk-portable-test.mjs",
+    "serve:sdk-portable-test": "node scripts/serve-sdk-portable-test.mjs",
+    "compare:benchmark": "node scripts/compare-benchmarks.mjs",
+    "prepare:dev-assets": "node scripts/prepare-dev-assets.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "0.10.35",
-    "onnxruntime-web": "^1.22.0"
+    "onnxruntime-web": "1.22.0"
   },
   "devDependencies": {
     "typescript": "^5.9.2",
     "vite": "^7.1.5"
   },
-  "license": "PolyForm-Noncommercial-1.0.0"
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "module": "./dist-sdk/openeyetrack.es.js",
+  "types": "./dist-sdk/types/sdk/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist-sdk/types/sdk/index.d.ts",
+      "import": "./dist-sdk/openeyetrack.es.js"
+    }
+  },
+  "files": [
+    "dist-sdk",
+    "README.md",
+    "LICENSE"
+  ]
 }
