@@ -296,6 +296,64 @@ function posePositionReady(pose:string){if(!baselineFace||!latestFace)return fal
 function drawPoseGuide(pose:string){const w=video.videoWidth||640,h=video.videoHeight||360;if(posePositionCanvas.width!==w)posePositionCanvas.width=w;if(posePositionCanvas.height!==h)posePositionCanvas.height=h;const ctx=posePositionCanvas.getContext("2d");if(!ctx)return;ctx.clearRect(0,0,w,h);const d=.075,dx=pose==="left"?-d:pose==="right"?d:0,dy=pose==="up"?-d:pose==="down"?d:0;const draw=(pts:import("@mediapipe/tasks-vision").NormalizedLandmark[]|null,color:string,radius:number,shiftX=0,shiftY=0)=>{if(!pts)return;ctx.fillStyle=color;ctx.strokeStyle="rgba(15,23,42,.35)";ctx.lineWidth=.65;for(const p of pts){ctx.beginPath();ctx.arc((1-(p.x+shiftX))*w,(p.y+shiftY)*h,radius,0,Math.PI*2);ctx.fill();ctx.stroke();}};draw(baselineFace,"rgba(245,158,11,.82)",2.15,dx,dy);draw(latestFace,"rgba(14,165,233,.92)",1.75);}
 function renderPoseIllustration(pose:string){const host=q<HTMLElement>("#pose-motion-illustration");const horizontal=pose==="left"||pose==="right";const arrow=pose==="left"?"←":pose==="right"?"→":pose==="up"?"↑":"↓";const shifted=pose==="left"?"translate(-12 0)":pose==="right"?"translate(12 0)":pose==="up"?"rotate(-10 60 48)":"rotate(10 60 48)";const action=horizontal?`Move your whole head slightly ${pose}`:`Tilt your head slightly ${pose}`;const person=(transform="")=>`<svg class="pose-person" viewBox="0 0 120 120" role="img" aria-label="Head position illustration"><g transform="${transform}" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><circle cx="60" cy="39" r="24"/><path d="M48 62v13M72 62v13M32 105c3-20 14-30 28-30s25 10 28 30"/><path d="M51 38h3M66 38h3M55 50c4 3 7 3 11 0"/></g></svg>`;host.innerHTML=`<div class="pose-example"><div><span class="pose-example-label">Start</span>${person()}</div><span class="pose-arrow">${arrow}</span><div><span class="pose-example-label">Target</span>${person(shifted)}</div></div><strong class="pose-caption">${action}</strong><span class="pose-subcaption">Keep looking at the screen while moving your ${horizontal?"whole head":"head"}.</span>`;}
 
+const COMPARISON_BENCHMARK_DURATION_MS=15000;
+const COMPARISON_BENCHMARK_POSITIONS:[[number,number],[number,number],[number,number],[number,number],[number,number]]=[[50,50],[16,18],[84,18],[16,82],[84,82]];
+
+async function runMainComparisonBenchmark():Promise<void>{
+  if(!calibration.model.calibrated||!runtime.getValidationMetrics()){
+    status.textContent="Complete calibration and validation before running the comparison benchmark.";
+    return;
+  }
+  if(recording)await finishRecording("recording_stop");
+  runComparisonBenchmark.disabled=true;downloadComparisonBenchmark.disabled=true;lastComparisonBenchmark=null;
+  comparisonBenchmarkOverlay.hidden=false;gazeDot.hidden=true;lastRecording=[];
+  try{
+    runtime.setTrial("main-app-benchmark");
+    runtime.sendMessage("BENCHMARK_RECORDING_START");
+    runtime.startRecording();
+    const segmentMs=COMPARISON_BENCHMARK_DURATION_MS/COMPARISON_BENCHMARK_POSITIONS.length,started=performance.now();
+    for(let i=0;i<COMPARISON_BENCHMARK_POSITIONS.length;i++){
+      const [x,y]=COMPARISON_BENCHMARK_POSITIONS[i];
+      comparisonBenchmarkTarget.style.left=`${x}vw`;
+      comparisonBenchmarkTarget.style.top=`${y}vh`;
+      runtime.sendMessage(`BENCHMARK_TARGET_${i+1}`);
+      const targetEnd=started+segmentMs*(i+1);
+      await new Promise<void>(resolve=>window.setTimeout(resolve,Math.max(0,targetEnd-performance.now())));
+    }
+    runtime.sendMessage("BENCHMARK_RECORDING_STOP");
+    lastRecording=runtime.stopRecording();
+    await runtime.drain();
+    const recordingSummary=summarizeRecordingBenchmark(lastRecording);
+    lastComparisonBenchmark={
+      format:"OpenEyeTrack A/B benchmark",
+      formatVersion:1,
+      surface:"main-app",
+      createdAt:new Date().toISOString(),
+      calibration:calibration.calibrationSummary,
+      validationMetrics:runtime.getValidationMetrics(),
+      frameDiagnostics:runtime.getFrameDiagnostics(),
+      recordingBenchmark:recordingSummary,
+      benchmarkProtocol:{
+        calibrationPreset:"full-defaults",
+        requestedRecordingDurationMs:COMPARISON_BENCHMARK_DURATION_MS,
+        targetPositionsPercent:COMPARISON_BENCHMARK_POSITIONS
+      },
+      environment:{
+        screenWidthPx:innerWidth,
+        screenHeightPx:innerHeight,
+        devicePixelRatio,
+        userAgent:navigator.userAgent
+      }
+    };
+    exportButton.disabled=!lastRecording.length;downloadComparisonBenchmark.disabled=false;
+    status.textContent=`Comparison benchmark complete: ${lastRecording.length} samples · ${recordingSummary.effectiveHz?.toFixed(2)??"?"} Hz effective sample rate. Download the benchmark JSON for comparison with the portable SDK.`;
+  }catch(e){
+    status.textContent=`Comparison benchmark error: ${e instanceof Error?e.message:String(e)}`;
+  }finally{
+    comparisonBenchmarkOverlay.hidden=true;runComparisonBenchmark.disabled=false;
+  }
+}
+
 function beginRecording(){headGuard.setConfig(readHeadGuardConfig());headGuard.start(latestFeatures);runtime.startRecording();runtime.setTrial("test");runtime.sendMessage("recording_start");recording=true;recordButton.textContent="Stop recording";exportButton.disabled=true;}
 async function finishRecording(event:string){runtime.sendMessage(event);recording=false;recordButton.textContent="Processing eye data…";await runtime.drain();lastRecording=runtime.stopRecording();recordButton.textContent="Start recording";exportButton.disabled=!lastRecording.length;headGuard.reset();}
 function interruptForHeadMovement(reason:string){if(!recording)return;finishRecording("head_movement_interrupt");headWarningText.textContent=`Recording stopped because ${reason}.`;headWarning.hidden=false;status.textContent=`Recording interrupted: ${reason}. ${lastRecording.length} samples retained and available for export.`;}
