@@ -9,6 +9,8 @@ export interface FaceFeatures {
 export interface FaceFeatureTrackerOptions {
   mediapipeWasmBaseUrl?: string;
   faceLandmarkerModelUrl?: string;
+  /** Explicit worker URL used by distributable SDK deployments. */
+  workerUrl?: string;
 }
 
 interface CachedFaceResult {
@@ -54,7 +56,8 @@ export class FaceFeatureTracker {
     if (this.initialized) return;
     if (this.initializePromise) return this.initializePromise;
     resetMediaPipeDiagnostics();
-    this.worker = new Worker(new URL("./FaceLandmarker.worker.ts", import.meta.url), { type: "module" });
+    const workerUrl = this.options.workerUrl ?? new URL("./FaceLandmarker.worker.ts", import.meta.url);
+    this.worker = new Worker(workerUrl, { type: "module" });
     this.initializePromise = new Promise<void>((resolve, reject) => {
       this.resolveInitialize = resolve;
       this.rejectInitialize = reject;
@@ -116,7 +119,8 @@ export class FaceFeatureTracker {
     };
     this.worker.onerror = event => {
       this.detectionInFlight = false;
-      const error = new Error(event.message || "MediaPipe worker failed.");
+      const detail = event.message || "worker script could not be loaded or executed";
+      const error = new Error(`MediaPipe worker failed (${String(workerUrl)}): ${detail}`);
       if (!this.initialized) {
         this.rejectInitialize?.(error);
         this.resolveInitialize = null;
