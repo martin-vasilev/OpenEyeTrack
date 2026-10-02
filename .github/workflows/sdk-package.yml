@@ -33,10 +33,16 @@ jobs:
       - name: Build and verify distributable
         run: npm run pack:sdk
 
-      - name: Create copyable ZIP
+      - name: Build repository-independent acceptance kit
+        run: |
+          node scripts/build-portable-sdk-test.mjs
+          npm run verify:sdk-portable-test
+
+      - name: Create copyable ZIPs
         run: |
           VERSION=$(node -p "require('./package.json').version")
           (cd dist-sdk && zip -qr "../release/openeyetrack-sdk-${VERSION}.zip" .)
+          (cd "release/openeyetrack-portable-test-${VERSION}" && zip -qr "../openeyetrack-portable-test-${VERSION}.zip" .)
 
       - name: Upload distributable
         uses: actions/upload-artifact@v4
