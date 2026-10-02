@@ -17,6 +17,8 @@ export interface OpenEyeTrackAssetConfig {
   resnet34ModelUrl?: string;
   /** Optional override for the MediaPipe face-landmarker model. */
   faceLandmarkerModelUrl?: string;
+  /** Optional override for the packaged MediaPipe face-landmarker worker. */
+  faceLandmarkerWorkerUrl?: string;
 }
 
 export interface ResolvedOpenEyeTrackAssets {
@@ -28,6 +30,7 @@ export interface ResolvedOpenEyeTrackAssets {
   mobileOneModelUrl: string;
   resnet34ModelUrl: string;
   faceLandmarkerModelUrl: string;
+  faceLandmarkerWorkerUrl: string;
 }
 
 export function resolveOpenEyeTrackAssets(
@@ -65,6 +68,10 @@ export function resolveOpenEyeTrackAssets(
     faceLandmarkerModelUrl: assetUrl(
       config.faceLandmarkerModelUrl ?? DEFAULT_FACE_LANDMARKER_MODEL,
       modelsBaseUrl
+    ),
+    faceLandmarkerWorkerUrl: assetUrl(
+      config.faceLandmarkerWorkerUrl ?? "workers/face-landmarker.worker.js",
+      baseUrl
     )
   };
 }
