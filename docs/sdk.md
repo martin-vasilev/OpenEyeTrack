@@ -180,6 +180,41 @@ A shortened 5-target × 1-run setup is enabled by default for manual smoke testi
 
 CI verifies that the generated kit contains the expected package assets and that the HTML has no source-tree imports. A real camera/setup interaction still requires a browser because CI does not substitute a synthetic calibration for the participant-facing acceptance test.
 
+## Main app vs portable SDK A/B benchmark
+
+The portable acceptance page now defaults to the production calibration preset: **ELG + robust polynomial ridge + 13 targets × 5 runs**. A 5 × 1 smoke-test preset remains available for quick packaging checks.
+
+After calibration and validation, both the main application and the portable SDK expose the same **15-second target-following benchmark**. The target visits centre and four screen corners for three seconds each. Each surface exports a benchmark JSON containing:
+
+- calibration configuration and calibration summary;
+- validation mean, median and RMSE error;
+- RMS sample-to-sample precision and data loss;
+- camera/media/callback/presented frame rates and missed frames;
+- recorded sample count;
+- effective sample rate;
+- median and 95th-percentile sample interval;
+- percentage of samples with valid gaze coordinates;
+- screen/browser metadata.
+
+For the portable SDK, build and run:
+
+```bash
+npm run build:sdk-portable-test
+npm run serve:sdk-portable-test
+```
+
+Choose **Full benchmark · 13 targets × 5 runs**, complete setup, then click **Run 15 s sampling benchmark** and download `openeyetrack-portable-benchmark.json`.
+
+For the main application, run the normal development app, complete the default 13 × 5 calibration and validation, open **Advanced / research settings**, run **Run 15 s benchmark**, and download `openeyetrack-main-app-benchmark.json`.
+
+Compare the two files with:
+
+```bash
+npm run compare:benchmark -- "/path/to/openeyetrack-main-app-benchmark.json" "/path/to/openeyetrack-portable-benchmark.json"
+```
+
+The comparator detects which file came from which surface and prints the main-app value, portable-SDK value and signed portable-minus-main difference for each metric.
+
 ## Compatibility test
 
 Before packaging a new version:
