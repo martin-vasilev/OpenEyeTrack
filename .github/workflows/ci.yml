@@ -31,6 +31,11 @@ jobs:
           npm run package:sdk
           npm run verify:sdk-package
 
+      - name: Verify repository-independent SDK kit
+        run: |
+          node scripts/build-portable-sdk-test.mjs
+          npm run verify:sdk-portable-test
+
       - name: Stage browser runtime assets
         run: |
           mkdir -p public
