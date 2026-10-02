@@ -9,7 +9,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "build:sdk": "vite build --config vite.config.sdk.ts && tsc -p tsconfig.sdk.json",
+    "build:sdk": "vite build --config vite.config.sdk.ts && vite build --config vite.config.worker.ts && tsc -p tsconfig.sdk.json",
     "test:sdk": "npm run build:sdk && node scripts/sdk-smoke.mjs",
     "build:all": "npm run build && npm run build:sdk",
     "package:sdk": "npm run build:sdk && node scripts/package-sdk.mjs",
