@@ -143,9 +143,14 @@ export class OpenEyeTrackRuntime {
     const assetConfig: OpenEyeTrackAssetConfig = { ...options.assets };
     if (options.assetBaseUrl && assetConfig.baseUrl === undefined) assetConfig.baseUrl = options.assetBaseUrl;
     this.assets = resolveOpenEyeTrackAssets(assetConfig);
+    const usePackagedWorker =
+      options.assetBaseUrl !== undefined ||
+      assetConfig.baseUrl !== undefined ||
+      assetConfig.faceLandmarkerWorkerUrl !== undefined;
     this.faceTracker = new FaceFeatureTracker({
       mediapipeWasmBaseUrl: this.assets.mediapipeWasmBaseUrl,
-      faceLandmarkerModelUrl: this.assets.faceLandmarkerModelUrl
+      faceLandmarkerModelUrl: this.assets.faceLandmarkerModelUrl,
+      workerUrl: usePackagedWorker ? this.assets.faceLandmarkerWorkerUrl : undefined
     });
     this.appearanceTracker = new AppearanceGazeTracker({
       mobileOneModelUrl: this.assets.mobileOneModelUrl,
