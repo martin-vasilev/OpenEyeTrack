@@ -68,24 +68,54 @@ unsubscribe();
 
 ## Package builds
 
-Development now produces a separate SDK bundle:
+The SDK is now packaged as **OpenEyeTrack 0.3.0 / Experiment API v1**.
+
+For code-only development builds:
 
 ```bash
 npm run build:sdk
 ```
 
-Outputs:
+For the copyable distributable:
+
+```bash
+npm run package:sdk
+npm run verify:sdk-package
+```
+
+This produces:
 
 ```text
 dist-sdk/
   openeyetrack.es.js
   openeyetrack.iife.js
   types/
+  sdk-manifest.json
+  README.md
+  models/
+    gazeml_elg_i60x36_n32.onnx
+    mobileone_s0_gaze.onnx
+    resnet34_gaze.onnx
+    face_landmarker.task
+  ort/
+    ort-wasm*.mjs
+    ort-wasm*.wasm
+  mediapipe/
+    wasm/
+      ...
 ```
 
 The ESM build is intended for bundlers and modern experiment code. The IIFE build is intended for experimental platforms that can load a browser script but do not provide a package bundler.
 
-The package remains `private: true` while the SDK is under development, preventing accidental npm publication.
+To create an installable/copyable npm tarball:
+
+```bash
+npm run pack:sdk
+```
+
+The tarball is written to `release/openeyetrack-0.3.0.tgz`. The repository remains `"private": true` during development, which prevents accidental npm publication while still allowing a versioned package archive to be built and tested.
+
+The distributable is designed to be copied intact into jsPsych, PsychoJS/Pavlovia, JATOS or a conventional web project. Set `assetBaseUrl` to the copied SDK directory so all model and browser-runtime assets resolve from that location.
 
 ## Compatibility test
 
@@ -189,6 +219,10 @@ By default, OpenEyeTrack resolves its local runtime assets relative to the direc
     gazeml_elg_i60x36_n32.onnx
     mobileone_s0_gaze.onnx
     resnet34_gaze.onnx
+    face_landmarker.task
+  ort/
+    ort-wasm*.mjs
+    ort-wasm*.wasm
   mediapipe/
     wasm/
       ...
@@ -221,7 +255,7 @@ const tracker = new OpenEyeTrackRuntime({
     baseUrl: "/vendor/openeyetrack/",
     elgModelUrl: "https://models.example.org/elg.onnx",
     mediapipeWasmBaseUrl: "/shared/mediapipe/wasm/",
-    ortWasmBaseUrl: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/"
+    ortWasmBaseUrl: "/shared/ort/"
   }
 });
 ```
@@ -234,7 +268,7 @@ console.log(tracker.getAssetUrls());
 
 This is intended to let the same SDK bundle run under GitHub Pages, JATOS, Pavlovia, university web servers, or other browser experiment hosts without editing OpenEyeTrack source code.
 
-The MediaPipe face-landmarker model remains remotely hosted by default, but `faceLandmarkerModelUrl` can be overridden for fully controlled/self-hosted deployments.
+The distributable now includes the MediaPipe face-landmarker model and ONNX Runtime WASM files locally by default. `faceLandmarkerModelUrl` and `ortWasmBaseUrl` can still be overridden for custom hosting.
 
 
 ## Self-contained setup UI
