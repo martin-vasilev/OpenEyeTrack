@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>OpenEyeTrack portable SDK acceptance test</title>
+  <style>
+    :root { font-family: Inter, system-ui, sans-serif; color: #172033; background: #f4f6f8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px; }
+    main { max-width: 1100px; margin: 0 auto; }
+    h1 { margin-bottom: 8px; }
+    .lead { color: #52606d; margin-top: 0; }
+    .grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(300px, .75fr); gap: 20px; }
+    .card { background: white; border: 1px solid #d9e0e7; border-radius: 14px; padding: 18px; box-shadow: 0 2px 10px rgba(23,32,51,.05); }
+    video { width: 100%; aspect-ratio: 16/9; object-fit: cover; background: #10151d; border-radius: 10px; transform: scaleX(-1); }
+    .controls { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+    button { border: 1px solid #b8c2cc; border-radius: 9px; padding: 10px 14px; background: white; font: inherit; cursor: pointer; }
+    button.primary { background: #172033; color: white; border-color: #172033; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .status { padding: 12px; border-radius: 9px; background: #eef2f6; min-height: 46px; }
+    .status.ok { background: #e8f5ec; }
+    .status.error { background: #fdebec; }
+    dl { display: grid; grid-template-columns: max-content 1fr; gap: 8px 14px; margin: 0; }
+    dt { font-weight: 600; }
+    dd { margin: 0; overflow-wrap: anywhere; }
+    code { font-size: .9em; }
+    .small { font-size: .9rem; color: #52606d; }
+    .check { display: flex; gap: 8px; align-items: center; margin: 12px 0; }
+    pre { max-height: 250px; overflow: auto; background: #f6f8fa; padding: 12px; border-radius: 8px; font-size: 12px; }
+    @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } body { padding: 12px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>OpenEyeTrack portable SDK acceptance test</h1>
+  <p class="lead">This page imports only the packaged SDK folder beside it. It does not import OpenEyeTrack source files.</p>
+
+  <div class="grid">
+    <section class="card">
+      <video id="camera" autoplay muted playsinline></video>
+
+      <label class="check">
+        <input id="quickSetup" type="checkbox" checked>
+        Use quick smoke-test calibration (5 targets × 1 run)
+      </label>
+
+      <div class="controls">
+        <button id="cameraButton" class="primary">1. Start camera</button>
+        <button id="setupButton" disabled>2. Run setup</button>
+        <button id="recordButton" disabled>3. Start recording</button>
+        <button id="stopButton" disabled>4. Stop + retrieve data</button>
+        <button id="csvButton" disabled>Download CSV</button>
+        <button id="summaryButton" disabled>Download summary JSON</button>
+      </div>
+
+      <div id="status" class="status">Loading SDK package…</div>
+      <p class="small">For the recording test, move your eyes around for several seconds before pressing “Stop + retrieve data”.</p>
+    </section>
+
+    <aside class="card">
+      <h2>Package/runtime checks</h2>
+      <dl>
+        <dt>Package</dt><dd id="packageVersion">—</dd>
+        <dt>Experiment API</dt><dd id="apiVersion">—</dd>
+        <dt>Connected</dt><dd id="connected">No</dd>
+        <dt>Calibrated</dt><dd id="calibrated">No</dd>
+        <dt>Recorded samples</dt><dd id="sampleCount">0</dd>
+        <dt>Observed FPS</dt><dd id="fps">—</dd>
+        <dt>Live gaze</dt><dd id="gaze">—</dd>
+      </dl>
+
+      <h3>Resolved assets</h3>
+      <pre id="assets">Waiting…</pre>
+
+      <h3>Validation</h3>
+      <pre id="validation">Not run.</pre>
+    </aside>
+  </div>
+</main>
+
+<script type="module">
+  import {
+    OPEN_EYE_TRACK_API_VERSION,
+    OpenEyeTrackRuntime,
+    defaultCalibrationConfig
+  } from "./openeyetrack/openeyetrack.es.js";
+
+  const sdkBase = new URL("./openeyetrack/", import.meta.url).href;
+  const video = document.querySelector("#camera");
+  const cameraButton = document.querySelector("#cameraButton");
+  const setupButton = document.querySelector("#setupButton");
+  const recordButton = document.querySelector("#recordButton");
+  const stopButton = document.querySelector("#stopButton");
+  const csvButton = document.querySelector("#csvButton");
+  const summaryButton = document.querySelector("#summaryButton");
+  const quickSetup = document.querySelector("#quickSetup");
+  const status = document.querySelector("#status");
+  const packageVersion = document.querySelector("#packageVersion");
+  const apiVersion = document.querySelector("#apiVersion");
+  const connected = document.querySelector("#connected");
+  const calibrated = document.querySelector("#calibrated");
+  const sampleCount = document.querySelector("#sampleCount");
+  const fps = document.querySelector("#fps");
+  const gaze = document.querySelector("#gaze");
+  const assets = document.querySelector("#assets");
+  const validation = document.querySelector("#validation");
+
+  let manifest = null;
+  let lastSamples = [];
+  let setupResult = null;
+
+  const tracker = new OpenEyeTrackRuntime({
+    video,
+    assetBaseUrl: sdkBase
+  });
+
+  function setStatus(message, kind) {
+    status.textContent = message;
+    status.className = "status" + (kind ? " " + kind : "");
+  }
+
+  function formatNumber(value, digits = 1) {
+    return Number.isFinite(value) ? Number(value).toFixed(digits) : "—";
+  }
+
+  function refresh() {
+    connected.textContent = tracker.isConnected() ? "Yes" : "No";
+    calibrated.textContent = tracker.hasCalibration() ? "Yes" : "No";
+    sampleCount.textContent = String(lastSamples.length || tracker.getSampleCount());
+    fps.textContent = formatNumber(tracker.getObservedFps(), 1);
+    validation.textContent = JSON.stringify(tracker.getValidationMetrics(), null, 2) || "Not run.";
+  }
+
+  const unsubscribe = tracker.onGaze(point => {
+    gaze.textContent = point ? formatNumber(point.x, 0) + ", " + formatNumber(point.y, 0) : "—";
+  });
+
+  window.addEventListener("beforeunload", () => {
+    unsubscribe();
+    tracker.close();
+  });
+
+  async function loadManifest() {
+    const response = await fetch(new URL("sdk-manifest.json", sdkBase), { cache: "no-store" });
+    if (!response.ok) throw new Error("Could not load packaged sdk-manifest.json (HTTP " + response.status + ").");
+    manifest = await response.json();
+    packageVersion.textContent = manifest.packageVersion || "unknown";
+    apiVersion.textContent = "v" + OPEN_EYE_TRACK_API_VERSION;
+    if (String(manifest.experimentApiVersion) !== String(OPEN_EYE_TRACK_API_VERSION)) {
+      throw new Error("Package manifest API version does not match the imported SDK.");
+    }
+    assets.textContent = JSON.stringify(tracker.getAssetUrls(), null, 2);
+    setStatus("SDK package loaded. Start the camera to test the packaged runtime.", "ok");
+  }
+
+  cameraButton.addEventListener("click", async () => {
+    cameraButton.disabled = true;
+    try {
+      setStatus("Starting camera and packaged MediaPipe runtime…");
+      const settings = await tracker.setConnectionState(true, { frameRate: 60 });
+      setupButton.disabled = false;
+      setStatus("Camera started. Actual camera settings: " + JSON.stringify(settings), "ok");
+      refresh();
+    } catch (error) {
+      cameraButton.disabled = false;
+      setStatus("Camera startup failed: " + (error instanceof Error ? error.message : String(error)), "error");
+    }
+  });
+
+  setupButton.addEventListener("click", async () => {
+    setupButton.disabled = true;
+    recordButton.disabled = true;
+    try {
+      let config;
+      if (quickSetup.checked) {
+        config = {
+          ...defaultCalibrationConfig(),
+          points: 5,
+          repetitions: 1,
+          settleMs: 400,
+          sampleMs: 700
+        };
+      }
+      setStatus("Running SDK-owned setup/calibration UI…");
+      setupResult = await tracker.runSetupProcedure({ ui: "default", config });
+      recordButton.disabled = false;
+      setStatus("Setup completed and returned data to the host page.", "ok");
+      refresh();
+    } catch (error) {
+      setupButton.disabled = false;
+      setStatus("Setup failed: " + (error instanceof Error ? error.message : String(error)), "error");
+    }
+  });
+
+  recordButton.addEventListener("click", () => {
+    lastSamples = [];
+    tracker.setTrial("portable-sdk-test");
+    tracker.sendMessage("PORTABLE_TEST_RECORDING_START");
+    tracker.setRecordingState(true);
+    recordButton.disabled = true;
+    stopButton.disabled = false;
+    csvButton.disabled = true;
+    summaryButton.disabled = true;
+    setStatus("Recording. Look around the page for several seconds.");
+    refresh();
+  });
+
+  stopButton.addEventListener("click", async () => {
+    stopButton.disabled = true;
+    try {
+      tracker.sendMessage("PORTABLE_TEST_RECORDING_STOP");
+      lastSamples = tracker.stopRecording();
+      await tracker.drain();
+      lastSamples = tracker.getRecordingData();
+      if (!lastSamples.length) {
+        throw new Error("Recording completed but getRecordingData() returned zero samples.");
+      }
+      csvButton.disabled = false;
+      summaryButton.disabled = false;
+      recordButton.disabled = false;
+      setStatus("PASS: portable SDK recorded and returned " + lastSamples.length + " samples.", "ok");
+      refresh();
+    } catch (error) {
+      recordButton.disabled = false;
+      setStatus("Recording/data retrieval failed: " + (error instanceof Error ? error.message : String(error)), "error");
+    }
+  });
+
+  function csvEscape(value) {
+    if (value === null || value === undefined) return "";
+    const text = typeof value === "object" ? JSON.stringify(value) : String(value);
+    return '"' + text.replaceAll('"', '""') + '"';
+  }
+
+  function samplesToCsv(samples) {
+    const keys = Array.from(new Set(samples.flatMap(sample => Object.keys(sample))));
+    const rows = [keys.map(csvEscape).join(",")];
+    for (const sample of samples) rows.push(keys.map(key => csvEscape(sample[key])).join(","));
+    return rows.join("\n");
+  }
+
+  function download(name, body, type) {
+    const url = URL.createObjectURL(new Blob([body], { type }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = name;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  csvButton.addEventListener("click", () => {
+    download(
+      "openeyetrack-portable-test.csv",
+      samplesToCsv(lastSamples),
+      "text/csv;charset=utf-8"
+    );
+  });
+
+  summaryButton.addEventListener("click", () => {
+    const summary = {
+      package: manifest,
+      apiVersion: OPEN_EYE_TRACK_API_VERSION,
+      assetUrls: tracker.getAssetUrls(),
+      setupResult,
+      validationMetrics: tracker.getValidationMetrics(),
+      messages: tracker.getMessages(),
+      frameDiagnostics: tracker.getFrameDiagnostics(),
+      recordedSamples: lastSamples.length
+    };
+    download(
+      "openeyetrack-portable-test-summary.json",
+      JSON.stringify(summary, null, 2),
+      "application/json"
+    );
+  });
+
+  setInterval(refresh, 500);
+  loadManifest().catch(error => {
+    cameraButton.disabled = true;
+    setStatus("SDK package preflight failed: " + (error instanceof Error ? error.message : String(error)), "error");
+  });
+</script>
+</body>
+</html>
