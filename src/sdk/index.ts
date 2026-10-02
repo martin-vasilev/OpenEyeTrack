@@ -66,3 +66,6 @@ export type {
   HeadPositionStatus,
   PoseAlignmentStatus
 } from "./HeadPositioning";
+
+export { summarizeRecordingBenchmark } from "./Benchmark";
+export type { OpenEyeTrackRecordingBenchmark } from "./Benchmark";
