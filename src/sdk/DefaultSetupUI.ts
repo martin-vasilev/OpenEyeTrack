@@ -26,6 +26,7 @@ export class DefaultSetupUI {
   private readonly root: HTMLDivElement;
   private readonly preview: HTMLVideoElement;
   private readonly poseCanvas: HTMLCanvasElement;
+  private readonly neutralGuide: HTMLDivElement;
   private readonly card: HTMLDivElement;
   private readonly eyebrow: HTMLParagraphElement;
   private readonly title: HTMLHeadingElement;
@@ -60,6 +61,11 @@ export class DefaultSetupUI {
         .oet-sdk-preview-wrap{margin:22px auto 0;width:min(560px,100%);aspect-ratio:16/9;border-radius:16px;background:#111827;overflow:hidden;position:relative}
         .oet-sdk-preview{width:100%;height:100%;object-fit:contain;transform:scaleX(-1)}
         .oet-sdk-pose-canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+        .oet-sdk-neutral-guide{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none}
+        .oet-sdk-neutral-guide[hidden]{display:none!important}
+        .oet-sdk-neutral-oval{width:34%;height:65%;border:4px dashed #f59e0b;border-radius:48% 48% 45% 45%;box-shadow:0 0 0 999px rgba(15,23,42,.22);transition:border-color .2s,box-shadow .2s}
+        .oet-sdk-neutral-crosshair{position:absolute;left:50%;top:50%;width:18px;height:18px;transform:translate(-50%,-50%);border:1px solid rgba(255,255,255,.72);border-radius:50%}
+        .oet-sdk-neutral-guide.ready .oet-sdk-neutral-oval{border-color:#22c55e;box-shadow:0 0 0 999px rgba(15,23,42,.10)}
         .oet-sdk-readiness{position:absolute;left:12px;right:12px;bottom:12px;padding:8px 11px;border-radius:10px;background:rgba(15,23,42,.86);color:white;font-weight:750;font-size:.85rem;text-align:center}
         .oet-sdk-readiness.ready{background:rgba(4,120,87,.92)}
         .oet-sdk-actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:24px}
@@ -91,6 +97,10 @@ export class DefaultSetupUI {
           <p class="oet-sdk-message"></p>
           <div class="oet-sdk-preview-wrap">
             <video class="oet-sdk-preview" autoplay muted playsinline></video>
+            <div class="oet-sdk-neutral-guide" hidden>
+              <div class="oet-sdk-neutral-oval"></div>
+              <div class="oet-sdk-neutral-crosshair"></div>
+            </div>
             <canvas class="oet-sdk-pose-canvas" hidden></canvas>
             <div class="oet-sdk-readiness">Checking camera…</div>
           </div>
@@ -106,6 +116,7 @@ export class DefaultSetupUI {
 
     this.preview = this.root.querySelector<HTMLVideoElement>(".oet-sdk-preview")!;
     this.poseCanvas = this.root.querySelector<HTMLCanvasElement>(".oet-sdk-pose-canvas")!;
+    this.neutralGuide = this.root.querySelector<HTMLDivElement>(".oet-sdk-neutral-guide")!;
     this.card = this.root.querySelector<HTMLDivElement>(".oet-sdk-setup-card")!;
     this.eyebrow = this.root.querySelector<HTMLParagraphElement>(".oet-sdk-eyebrow")!;
     this.title = this.root.querySelector<HTMLHeadingElement>(".oet-sdk-title")!;
@@ -137,6 +148,8 @@ export class DefaultSetupUI {
     this.metrics.hidden = true;
     this.preview.parentElement!.hidden = false;
     this.poseCanvas.hidden = true;
+    this.neutralGuide.hidden = false;
+    this.neutralGuide.classList.remove("ready");
     this.eyebrow.textContent = "OpenEyeTrack setup";
     this.title.textContent = "Position yourself for eye tracking";
     this.message.textContent =
@@ -167,6 +180,7 @@ export class DefaultSetupUI {
       const ready = faces === 1 && latched;
       this.primary.disabled = !ready;
       readiness.classList.toggle("ready", ready || acceptable);
+      this.neutralGuide.classList.toggle("ready", ready || acceptable);
 
       if (faces > 1) readiness.textContent = "Please keep only one face in view";
       else if (faces === 0) readiness.textContent = "Position your face inside the guide";
@@ -187,6 +201,7 @@ export class DefaultSetupUI {
 
   showProgress(message: string): void {
     this.mount();
+    this.neutralGuide.hidden = true;
     this.releasePreview();
     this.root.hidden = false;
     this.card.hidden = true;
@@ -196,6 +211,7 @@ export class DefaultSetupUI {
 
   showCalibration(round: number, total: number, pose: CalibrationHeadPose): void {
     this.mount();
+    this.neutralGuide.hidden = true;
     this.releasePreview();
     this.primary.hidden = false;
     this.poseCanvas.hidden = true;
@@ -223,6 +239,7 @@ export class DefaultSetupUI {
     this.progress.hidden = true;
     this.metrics.hidden = true;
     this.preview.parentElement!.hidden = false;
+    this.neutralGuide.hidden = true;
     this.poseCanvas.hidden = false;
     this.eyebrow.textContent = `Calibration run ${round + 1} of ${total}`;
     this.title.textContent = poseTitle(pose);
@@ -279,6 +296,7 @@ export class DefaultSetupUI {
     this.progress.hidden = true;
     this.metrics.hidden = true;
     this.preview.parentElement!.hidden = false;
+    this.neutralGuide.hidden = true;
     this.poseCanvas.hidden = true;
     this.eyebrow.textContent = `Calibration run ${round + 1} of ${total}`;
     this.title.textContent = poseTitle(pose);
@@ -294,6 +312,7 @@ export class DefaultSetupUI {
 
   async promptPursuit(): Promise<void> {
     this.mount();
+    this.neutralGuide.hidden = true;
     this.releasePreview();
     this.primary.hidden = false;
     this.poseCanvas.hidden = true;
@@ -317,6 +336,7 @@ export class DefaultSetupUI {
 
   showValidation(): void {
     this.mount();
+    this.neutralGuide.hidden = true;
     this.releasePreview();
     this.primary.hidden = false;
     this.poseCanvas.hidden = true;
@@ -328,6 +348,7 @@ export class DefaultSetupUI {
 
   async results(validation: ValidationResult | null): Promise<void> {
     this.mount();
+    this.neutralGuide.hidden = true;
     this.releasePreview();
     this.primary.hidden = false;
     this.poseCanvas.hidden = true;
@@ -360,6 +381,7 @@ export class DefaultSetupUI {
 
   async error(error: unknown): Promise<void> {
     this.mount();
+    this.neutralGuide.hidden = true;
     this.releasePreview();
     this.primary.hidden = false;
     this.poseCanvas.hidden = true;
@@ -381,6 +403,8 @@ export class DefaultSetupUI {
   hide(): void {
     this.target.hidden = true;
     this.poseCanvas.hidden = true;
+    this.neutralGuide.hidden = true;
+    this.neutralGuide.classList.remove("ready");
     this.root.querySelector<HTMLDivElement>(".oet-sdk-readiness")?.classList.remove("ready");
     this.root.hidden = true;
     this.releasePreview();
