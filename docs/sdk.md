@@ -117,6 +117,60 @@ The tarball is written to `release/openeyetrack-0.3.0.tgz`. The repository remai
 
 The distributable is designed to be copied intact into jsPsych, PsychoJS/Pavlovia, JATOS or a conventional web project. Set `assetBaseUrl` to the copied SDK directory so all model and browser-runtime assets resolve from that location.
 
+## Repository-independent portable acceptance test
+
+The strongest packaging smoke test is a generated mini-site that contains **only** the distributable SDK plus one standalone HTML page.
+
+Build it with:
+
+```bash
+npm run build:sdk-portable-test
+```
+
+This creates:
+
+```text
+release/
+  openeyetrack-portable-test-0.3.0/
+    index.html
+    README.txt
+    openeyetrack/
+      openeyetrack.es.js
+      openeyetrack.iife.js
+      sdk-manifest.json
+      models/
+      ort/
+      mediapipe/
+```
+
+The acceptance page imports only:
+
+```js
+import { OpenEyeTrackRuntime } from "./openeyetrack/openeyetrack.es.js";
+```
+
+It does not import anything from `src/` and therefore tests the package as a consumer would receive it.
+
+Run it locally with:
+
+```bash
+npm run serve:sdk-portable-test
+```
+
+and open the printed localhost URL. The page walks through:
+
+1. loading and checking `sdk-manifest.json`;
+2. camera startup using the packaged MediaPipe assets;
+3. the SDK-owned setup/calibration UI;
+4. recording with trial/event markers;
+5. `stopRecording()` and `getRecordingData()`;
+6. a hard PASS only when a non-zero sample array is returned;
+7. CSV export and a JSON summary containing validation metrics, messages, diagnostics and resolved asset URLs.
+
+A shortened 5-target × 1-run setup is enabled by default for manual smoke testing; it can be disabled to exercise the current full calibration defaults.
+
+CI verifies that the generated kit contains the expected package assets and that the HTML has no source-tree imports. A real camera/setup interaction still requires a browser because CI does not substitute a synthetic calibration for the participant-facing acceptance test.
+
 ## Compatibility test
 
 Before packaging a new version:
