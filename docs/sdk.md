@@ -121,6 +121,11 @@ The tarball is written to `release/openeyetrack-0.3.0.tgz`. The repository remai
 
 The distributable is designed to be copied intact into jsPsych, PsychoJS/Pavlovia, JATOS or a conventional web project. Set `assetBaseUrl` to the copied SDK directory so all model and browser-runtime assets resolve from that location.
 
+
+### Runtime version pinning
+
+OpenEyeTrack 0.3.0 pins `onnxruntime-web` to **1.22.0** exactly. The ELG model is a legacy TensorFlow 1.13 / ONNX opset-10 graph, and allowing npm to float to newer ONNX Runtime releases can change model-loading/shape-inference behaviour. The SDK therefore treats the ONNX Runtime version as part of the validated runtime rather than an unconstrained implementation detail.
+
 ## Repository-independent portable acceptance test
 
 The strongest packaging smoke test is a generated mini-site that contains **only** the distributable SDK plus one standalone HTML page.
