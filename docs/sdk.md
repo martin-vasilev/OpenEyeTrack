@@ -92,6 +92,8 @@ dist-sdk/
   types/
   sdk-manifest.json
   README.md
+  workers/
+    face-landmarker.worker.js
   models/
     gazeml_elg_i60x36_n32.onnx
     mobileone_s0_gaze.onnx
@@ -103,6 +105,8 @@ dist-sdk/
   mediapipe/
     wasm/
       ...
+  workers/
+    face-landmarker.worker.js
 ```
 
 The ESM build is intended for bundlers and modern experiment code. The IIFE build is intended for experimental platforms that can load a browser script but do not provide a package bundler.
@@ -297,7 +301,10 @@ This resolves, for example:
 ```text
 https://example.org/my-study/openeyetrack/models/gazeml_elg_i60x36_n32.onnx
 https://example.org/my-study/openeyetrack/mediapipe/wasm/
+https://example.org/my-study/openeyetrack/workers/face-landmarker.worker.js
 ```
+
+For distributable deployments, `assetBaseUrl` also switches MediaPipe processing to the stable packaged worker path above. The application build can continue using Vite's internal worker resolution.
 
 Fine-grained overrides are also supported:
 
