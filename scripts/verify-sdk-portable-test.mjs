@@ -19,6 +19,7 @@ const required = [
   "openeyetrack/openeyetrack.es.js",
   "openeyetrack/openeyetrack.iife.js",
   "openeyetrack/sdk-manifest.json",
+  "openeyetrack/workers/face-landmarker.worker.js",
   "openeyetrack/models/gazeml_elg_i60x36_n32.onnx",
   "openeyetrack/models/face_landmarker.task",
   "openeyetrack/mediapipe/wasm/vision_wasm_module_internal.wasm"
