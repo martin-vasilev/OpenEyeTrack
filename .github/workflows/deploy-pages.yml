@@ -47,11 +47,13 @@ jobs:
           curl -L --fail --retry 3 -o public/models/gazeml_elg_i60x36_n32.onnx https://storage.googleapis.com/ailia-models/gazeml/gazeml_elg_i60x36_n32.onnx
           curl -L --fail --retry 3 -o public/models/mobileone_s0_gaze.onnx https://github.com/yakhyo/gaze-estimation/releases/download/weights/mobileone_s0_gaze.onnx
           curl -L --fail --retry 3 -o public/models/resnet34_gaze.onnx https://github.com/yakhyo/gaze-estimation/releases/download/weights/resnet34_gaze.onnx
+          curl -L --fail --retry 3 -o public/models/face_landmarker.task https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task
           cp node_modules/onnxruntime-web/dist/ort-wasm*.wasm public/ort/
           cp node_modules/onnxruntime-web/dist/ort-wasm*.mjs public/ort/
           cp -R node_modules/@mediapipe/tasks-vision/wasm/. public/mediapipe/wasm/
           test -f public/mediapipe/wasm/vision_wasm_module_internal.js
           test -f public/mediapipe/wasm/vision_wasm_module_internal.wasm
+          test -f public/models/face_landmarker.task
           npm run build
 
       - name: Build dev preview
@@ -63,11 +65,13 @@ jobs:
           curl -L --fail --retry 3 -o public/models/gazeml_elg_i60x36_n32.onnx https://storage.googleapis.com/ailia-models/gazeml/gazeml_elg_i60x36_n32.onnx
           curl -L --fail --retry 3 -o public/models/mobileone_s0_gaze.onnx https://github.com/yakhyo/gaze-estimation/releases/download/weights/mobileone_s0_gaze.onnx
           curl -L --fail --retry 3 -o public/models/resnet34_gaze.onnx https://github.com/yakhyo/gaze-estimation/releases/download/weights/resnet34_gaze.onnx
+          curl -L --fail --retry 3 -o public/models/face_landmarker.task https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task
           cp node_modules/onnxruntime-web/dist/ort-wasm*.wasm public/ort/
           cp node_modules/onnxruntime-web/dist/ort-wasm*.mjs public/ort/
           cp -R node_modules/@mediapipe/tasks-vision/wasm/. public/mediapipe/wasm/
           test -f public/mediapipe/wasm/vision_wasm_module_internal.js
           test -f public/mediapipe/wasm/vision_wasm_module_internal.wasm
+          test -f public/models/face_landmarker.task
           npm run build -- --base=/OpenEyeTrack/dev/
 
       - name: Combine stable and dev sites
