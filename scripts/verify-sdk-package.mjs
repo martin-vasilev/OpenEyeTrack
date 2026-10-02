@@ -23,6 +23,7 @@ const requiredFiles = [
   "types/sdk/index.d.ts",
   "README.md",
   "sdk-manifest.json",
+  "workers/face-landmarker.worker.js",
   "models/gazeml_elg_i60x36_n32.onnx",
   "models/mobileone_s0_gaze.onnx",
   "models/resnet34_gaze.onnx",
