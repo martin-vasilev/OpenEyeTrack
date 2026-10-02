@@ -27,6 +27,12 @@
     code { font-size: .9em; }
     .small { font-size: .9rem; color: #52606d; }
     .check { display: flex; gap: 8px; align-items: center; margin: 12px 0; }
+    select { padding: 9px 11px; border: 1px solid #b8c2cc; border-radius: 9px; background: white; font: inherit; }
+    .benchmark-overlay { position: fixed; inset: 0; z-index: 2147482500; background: #f4f6f8; }
+    .benchmark-overlay[hidden] { display: none !important; }
+    .benchmark-target { position: absolute; width: 34px; height: 34px; margin: -17px 0 0 -17px; border: 3px solid #172033; border-radius: 50%; background: white; transition: left .2s ease, top .2s ease; }
+    .benchmark-target::after { content: ""; position: absolute; width: 8px; height: 8px; left: 10px; top: 10px; border-radius: 50%; background: #172033; }
+    .benchmark-note { position: absolute; left: 50%; top: 24px; transform: translateX(-50%); padding: 10px 16px; border-radius: 999px; background: rgba(23,32,51,.92); color: white; font-weight: 700; }
     pre { max-height: 250px; overflow: auto; background: #f6f8fa; padding: 12px; border-radius: 8px; font-size: 12px; }
     @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } body { padding: 12px; } }
   </style>
@@ -41,21 +47,25 @@
       <video id="camera" autoplay muted playsinline></video>
 
       <label class="check">
-        <input id="quickSetup" type="checkbox" checked>
-        Use quick smoke-test calibration (5 targets × 1 run)
+        <span>Calibration:</span>
+        <select id="calibrationMode">
+          <option value="full" selected>Full benchmark · 13 targets × 5 runs</option>
+          <option value="quick">Quick smoke test · 5 targets × 1 run</option>
+        </select>
       </label>
 
       <div class="controls">
         <button id="cameraButton" class="primary">1. Start camera</button>
         <button id="setupButton" disabled>2. Run setup</button>
-        <button id="recordButton" disabled>3. Start recording</button>
-        <button id="stopButton" disabled>4. Stop + retrieve data</button>
+        <button id="benchmarkButton" disabled>3. Run 15 s sampling benchmark</button>
+        <button id="recordButton" disabled>Manual recording</button>
+        <button id="stopButton" disabled>Stop manual recording</button>
         <button id="csvButton" disabled>Download CSV</button>
-        <button id="summaryButton" disabled>Download summary JSON</button>
+        <button id="summaryButton" disabled>Download benchmark JSON</button>
       </div>
 
       <div id="status" class="status">Loading SDK package…</div>
-      <p class="small">For the recording test, move your eyes around for several seconds before pressing “Stop + retrieve data”.</p>
+      <p class="small">For the A/B comparison, use the full 13 × 5 calibration and then run the fixed 15-second sampling benchmark. Follow the target with your eyes while keeping your head still.</p>
     </section>
 
     <aside class="card">
@@ -79,22 +89,31 @@
   </div>
 </main>
 
+<div id="benchmarkOverlay" class="benchmark-overlay" hidden>
+  <div class="benchmark-note">Sampling benchmark · follow the target with your eyes</div>
+  <div id="benchmarkTarget" class="benchmark-target"></div>
+</div>
+
 <script type="module">
   import {
     OPEN_EYE_TRACK_API_VERSION,
     OpenEyeTrackRuntime,
-    defaultCalibrationConfig
+    defaultCalibrationConfig,
+    summarizeRecordingBenchmark
   } from "./openeyetrack/openeyetrack.es.js";
 
   const sdkBase = new URL("./openeyetrack/", import.meta.url).href;
   const video = document.querySelector("#camera");
   const cameraButton = document.querySelector("#cameraButton");
   const setupButton = document.querySelector("#setupButton");
+  const benchmarkButton = document.querySelector("#benchmarkButton");
   const recordButton = document.querySelector("#recordButton");
   const stopButton = document.querySelector("#stopButton");
   const csvButton = document.querySelector("#csvButton");
   const summaryButton = document.querySelector("#summaryButton");
-  const quickSetup = document.querySelector("#quickSetup");
+  const calibrationMode = document.querySelector("#calibrationMode");
+  const benchmarkOverlay = document.querySelector("#benchmarkOverlay");
+  const benchmarkTarget = document.querySelector("#benchmarkTarget");
   const status = document.querySelector("#status");
   const packageVersion = document.querySelector("#packageVersion");
   const apiVersion = document.querySelector("#apiVersion");
@@ -109,6 +128,15 @@
   let manifest = null;
   let lastSamples = [];
   let setupResult = null;
+  let recordingBenchmark = null;
+  const BENCHMARK_DURATION_MS = 15000;
+  const BENCHMARK_POSITIONS = [
+    [50, 50],
+    [16, 18],
+    [84, 18],
+    [16, 82],
+    [84, 82]
+  ];
 
   const tracker = new OpenEyeTrackRuntime({
     video,
@@ -172,24 +200,86 @@
     setupButton.disabled = true;
     recordButton.disabled = true;
     try {
-      let config;
-      if (quickSetup.checked) {
-        config = {
-          ...defaultCalibrationConfig(),
-          points: 5,
-          repetitions: 1,
-          settleMs: 400,
-          sampleMs: 700
-        };
-      }
+      const config = calibrationMode.value === "quick"
+        ? {
+            ...defaultCalibrationConfig(),
+            points: 5,
+            repetitions: 1,
+            settleMs: 400,
+            sampleMs: 700
+          }
+        : defaultCalibrationConfig();
       setStatus("Running SDK-owned setup/calibration UI…");
       setupResult = await tracker.runSetupProcedure({ ui: "default", config });
+      benchmarkButton.disabled = false;
       recordButton.disabled = false;
-      setStatus("Setup completed and returned data to the host page.", "ok");
+      setStatus(
+        "Setup completed. " +
+        (calibrationMode.value === "full"
+          ? "Run the 15-second benchmark for the main-app comparison."
+          : "Quick smoke-test setup completed."),
+        "ok"
+      );
       refresh();
     } catch (error) {
       setupButton.disabled = false;
       setStatus("Setup failed: " + (error instanceof Error ? error.message : String(error)), "error");
+    }
+  });
+
+  benchmarkButton.addEventListener("click", async () => {
+    benchmarkButton.disabled = true;
+    recordButton.disabled = true;
+    stopButton.disabled = true;
+    csvButton.disabled = true;
+    summaryButton.disabled = true;
+    lastSamples = [];
+    recordingBenchmark = null;
+
+    try {
+      tracker.setTrial("portable-sdk-benchmark");
+      tracker.sendMessage("BENCHMARK_RECORDING_START");
+      tracker.setRecordingState(true);
+      benchmarkOverlay.hidden = false;
+
+      const segmentMs = BENCHMARK_DURATION_MS / BENCHMARK_POSITIONS.length;
+      const started = performance.now();
+
+      for (let i = 0; i < BENCHMARK_POSITIONS.length; i++) {
+        const [x, y] = BENCHMARK_POSITIONS[i];
+        benchmarkTarget.style.left = x + "vw";
+        benchmarkTarget.style.top = y + "vh";
+        tracker.sendMessage("BENCHMARK_TARGET_" + (i + 1));
+        const targetEnd = started + segmentMs * (i + 1);
+        await new Promise(resolve => setTimeout(resolve, Math.max(0, targetEnd - performance.now())));
+      }
+
+      benchmarkOverlay.hidden = true;
+      tracker.sendMessage("BENCHMARK_RECORDING_STOP");
+      tracker.stopRecording();
+      await tracker.drain();
+      lastSamples = tracker.getRecordingData();
+      if (!lastSamples.length) throw new Error("The benchmark returned zero recorded samples.");
+
+      recordingBenchmark = summarizeRecordingBenchmark(lastSamples);
+      csvButton.disabled = false;
+      summaryButton.disabled = false;
+      benchmarkButton.disabled = false;
+      recordButton.disabled = false;
+      setStatus(
+        "BENCHMARK COMPLETE: " +
+        lastSamples.length +
+        " samples · " +
+        formatNumber(recordingBenchmark.effectiveHz, 2) +
+        " Hz effective rate.",
+        "ok"
+      );
+      refresh();
+    } catch (error) {
+      benchmarkOverlay.hidden = true;
+      benchmarkButton.disabled = false;
+      recordButton.disabled = false;
+      setStatus("Benchmark failed: " + (error instanceof Error ? error.message : String(error)), "error");
     }
   });
 
@@ -266,10 +356,23 @@
       validationMetrics: tracker.getValidationMetrics(),
       messages: tracker.getMessages(),
       frameDiagnostics: tracker.getFrameDiagnostics(),
-      recordedSamples: lastSamples.length
+      recordedSamples: lastSamples.length,
+      recordingBenchmark: recordingBenchmark ?? summarizeRecordingBenchmark(lastSamples),
+      benchmarkProtocol: {
+        surface: "portable-sdk",
+        calibrationPreset: calibrationMode.value,
+        requestedRecordingDurationMs: BENCHMARK_DURATION_MS,
+        targetPositionsPercent: BENCHMARK_POSITIONS
+      },
+      environment: {
+        screenWidthPx: window.innerWidth,
+        screenHeightPx: window.innerHeight,
+        devicePixelRatio: window.devicePixelRatio,
+        userAgent: navigator.userAgent
+      }
     };
     download(
-      "openeyetrack-portable-test-summary.json",
+      "openeyetrack-portable-benchmark.json",
       JSON.stringify(summary, null, 2),
       "application/json"
     );
