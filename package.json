@@ -5,7 +5,7 @@
   "description": "Browser-native webcam eye tracking for behavioural research",
   "type": "module",
   "scripts": {
-    "dev": "npm run prepare:dev-assets && vite",
+    "dev": "node scripts/prepare-dev-assets.mjs && vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
