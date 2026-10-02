@@ -1,7 +1,4 @@
-const DEFAULT_FACE_LANDMARKER_MODEL_URL =
-  "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task";
-const DEFAULT_ORT_WASM_BASE_URL =
-  "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/";
+const DEFAULT_FACE_LANDMARKER_MODEL = "face_landmarker.task";
 
 export interface OpenEyeTrackAssetConfig {
   /** Directory containing the OpenEyeTrack asset folders. Defaults to the hosting page directory. */
@@ -44,7 +41,7 @@ export function resolveOpenEyeTrackAssets(
     baseUrl
   );
   const ortWasmBaseUrl = directoryUrl(
-    config.ortWasmBaseUrl ?? DEFAULT_ORT_WASM_BASE_URL,
+    config.ortWasmBaseUrl ?? "ort/",
     baseUrl
   );
 
@@ -66,8 +63,8 @@ export function resolveOpenEyeTrackAssets(
       modelsBaseUrl
     ),
     faceLandmarkerModelUrl: assetUrl(
-      config.faceLandmarkerModelUrl ?? DEFAULT_FACE_LANDMARKER_MODEL_URL,
-      baseUrl
+      config.faceLandmarkerModelUrl ?? DEFAULT_FACE_LANDMARKER_MODEL,
+      modelsBaseUrl
     )
   };
 }
