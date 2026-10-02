@@ -5,7 +5,7 @@
   "description": "Browser-native webcam eye tracking for behavioural research",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "npm run prepare:dev-assets && vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
@@ -18,7 +18,8 @@
     "build:sdk-portable-test": "npm run package:sdk && node scripts/build-portable-sdk-test.mjs && node scripts/verify-sdk-portable-test.mjs",
     "verify:sdk-portable-test": "node scripts/verify-sdk-portable-test.mjs",
     "serve:sdk-portable-test": "node scripts/serve-sdk-portable-test.mjs",
-    "compare:benchmark": "node scripts/compare-benchmarks.mjs"
+    "compare:benchmark": "node scripts/compare-benchmarks.mjs",
+    "prepare:dev-assets": "node scripts/prepare-dev-assets.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "0.10.35",
