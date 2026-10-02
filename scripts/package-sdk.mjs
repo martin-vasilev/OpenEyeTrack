@@ -85,7 +85,8 @@ const manifest = {
   assetBaseLayout: {
     models: "models/",
     onnxRuntime: "ort/",
-    mediapipeWasm: "mediapipe/wasm/"
+    mediapipeWasm: "mediapipe/wasm/",
+    faceLandmarkerWorker: "workers/face-landmarker.worker.js"
   },
   models: Object.fromEntries(modelAssets.map(asset => [asset.file, asset.url])),
   runtimeDependencies: {
@@ -134,7 +135,7 @@ The directory includes the gaze models, MediaPipe face-landmarker model, MediaPi
 
 await writeFile(join(outDir, "README.md"), readme, "utf8");
 
-for (const file of ["openeyetrack.es.js", "openeyetrack.iife.js", "types/sdk/index.d.ts"]) {
+for (const file of ["openeyetrack.es.js", "openeyetrack.iife.js", "workers/face-landmarker.worker.js", "types/sdk/index.d.ts"]) {
   const info = await stat(join(outDir, file));
   if (!info.isFile() || info.size === 0) throw new Error(`Missing SDK build output: ${file}`);
 }
