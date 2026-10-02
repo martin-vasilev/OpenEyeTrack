@@ -1,0 +1,48 @@
+name: Build OpenEyeTrack SDK distributable
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "sdk-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Contract smoke test
+        run: npm run test:sdk
+
+      - name: Build and verify distributable
+        run: npm run pack:sdk
+
+      - name: Create copyable ZIP
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          (cd dist-sdk && zip -qr "../release/openeyetrack-sdk-${VERSION}.zip" .)
+
+      - name: Upload distributable
+        uses: actions/upload-artifact@v4
+        with:
+          name: openeyetrack-sdk
+          path: |
+            release/*.tgz
+            release/*.zip
+          if-no-files-found: error
